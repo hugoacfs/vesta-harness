@@ -6,7 +6,7 @@ Living document: agents working on this fork update the status table and the log
 
 | Phase | Goal | State |
 |---|---|---|
-| 0 | Fork online on vesta, styled, text-only: `vesta` profile, ember theme, Vesta brand, MCP rows; side-by-side on `:3081` / serve `:8791` | in progress |
+| 0 | Fork online on vesta, styled, text-only: `vesta` profile, ember theme, Vesta brand, MCP rows; side-by-side on `:3081` / serve `:8791` | done 2026-09-05 (Landlock sandbox binary pending `musl-tools`) |
 | A | Voice into the session: host bridge plugin, mic + call HUD, Python agent bridge (feature-flagged) | pending |
 | B | Autonomy and approvals by voice; spoken-mode persona preset | pending |
 | C | Cutover `:8790`, retire the standalone `:8480` voice UI, move voice service sources into `services/`, upstream sync drill | pending |
@@ -35,9 +35,9 @@ Standing constraints: voice models run on the RTX 3060 only (`GPU-4c4e6e17-…`)
 
 1. Clone `hugoacfs/vesta-harness` locally and on vesta; `upstream` remote; branch `vesta`. ✅ 2026-09-04
 2. Scaffold `dsh-vesta-app`, `dsh-client-ui-vesta-theme`, `dsh-client-ui-vesta-brand`, fonts, `deploy/vesta`, aggregate references. ✅ 2026-09-04
-3. Build on vesta (`pnpm install`, `pnpm run build`; `musl-tools` + landlock native build for the sandbox modes). ⏳
-4. Home `~/.vesta-harness` (profile, settings, credentials, `vesta-orch` preset). ⏳
-5. `vesta-harness.service` on `:3081`; `tailscale serve --bg --https=8791 http://127.0.0.1:3081`. ⏳
+3. Build on vesta (`pnpm install`, `pnpm run build`). ✅ 2026-09-05 — `musl-tools` + landlock native build still pending (needs sudo); until then only `danger-full-access` runs bash.
+4. Home `~/.vesta-harness` (profile, settings, credentials, `vesta-orch` preset). ✅ 2026-09-05
+5. `vesta-harness.service` on `:3081`; `tailscale serve --bg --https=8791 http://127.0.0.1:3081`. ✅ 2026-09-05
 - Verify: `--dump-config` lists the Vesta rows; `:8791` loads with Vesta brand + ember theme; a text session answers via Qwen `default`; `mcp__memory__*` / `mcp__search__*` present; `vesta-orch` active; `/permission` shows the 3-tier table; `:8790` untouched.
 
 ## Phase A — voice into the session
@@ -68,3 +68,4 @@ Standing constraints: voice models run on the RTX 3060 only (`GPU-4c4e6e17-…`)
 
 - 2026-09-04 — Fork cloned (`d347e70`), `vesta` branch created locally and on vesta, `pnpm install` green on both. Scaffolded the three Vesta packages, the bundle, fonts, deploy tree; aggregate references added.
 - 2026-09-05 — Local `pnpm run build` green (230 client artifacts). `dsh --profile vesta --dump-config` lists the Vesta rows after `dsh-web-app`. Booted locally on `:3082` against a scratch home: ember token layer applied (`--dsw-alias-bg-base: #07080c`), all three self-hosted fonts loaded, sidebar orb + "Vesta Harness" wordmark, hero orb, `vesta-orch` preset (ported, `+command-goal`) resolves as "Vesta Orchestrator"; no console errors. Note: 0.1.3 prints a tokenized startup URL; the browser exchanges it once for a persistent signed cookie (`journalctl --user -u vesta-harness` shows the URL after each start). Stock DeepSeek API-key onboarding modal shows once ("Configure later").
+- 2026-09-05 — Deployed on vesta: `pnpm run build` green from the checkout, home `~/.vesta-harness` created from `deploy/vesta` (credentials copied with `install -m 600`), unit `vesta-harness` active on `127.0.0.1:3081`, `tailscale serve :8791 → 3081`. Verified through the tailnet with curl: `?token=` → 303 + signed cookie, index 200 with the boot payload listing `ui-vesta-theme` / `ui-vesta-brand`, shell asset and `/vesta/fonts/*` 200; boot journal quiet. Old install untouched (`dsh-web` active, `:3080` → 200, `:8790` unchanged). Plugin bundles are served as combos (`/plugins/??<id>,<id>…`), not per-entry paths.
