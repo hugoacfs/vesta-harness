@@ -10,6 +10,17 @@
 # Everything else (model route, presets, permissions, theme preference) is
 # user settings in $DSH_HOME/settings.yaml — see deploy/vesta/README.md.
 
+# ── browser session: a year-long cookie on a tailnet-only, single-user host ──
+# Restates the dsh-web-app row (a patch replaces the whole config): the LAN
+# trust literals stay derived from the active bind plus --trusted-host extras;
+# only the cookie lifetime changes (upstream default 30 days), so a device
+# needs the tokenized startup URL once, not monthly.
+- id: connection
+  inject: [webRuntime]
+  config:
+    trustedHosts: !!js ctx.webRuntime.trustedHosts
+    cookieMaxAgeDays: 365
+
 - insert:
     # ── browser: Vesta look ────────────────────────────────────────────────
     - id: ui-vesta-theme

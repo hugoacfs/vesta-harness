@@ -54,6 +54,15 @@ systemctl --user status vesta-harness --no-pager
 tailscale serve --bg --https=8791 http://127.0.0.1:3081
 ```
 
+## First visit from a browser
+
+`dsh web` gates the page behind a per-process launch token: the bare URL answers `401 dsh web authentication required` until the browser has opened the tokenized URL once. That exchange sets a signed, host-bound cookie whose signing secret lives in `$DSH_HOME/.credentials.yaml`, so the cookie survives service restarts; only a new browser or device needs the token again.
+
+```bash
+install -m 755 ~/code/vesta-harness/deploy/vesta/bin/vesta-url ~/.local/bin/vesta-url
+vesta-url    # prints https://vesta.tail22b555.ts.net:8791/?token=… for the running process
+```
+
 ## Verify
 
 - `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3081/` → `200`

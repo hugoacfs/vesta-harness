@@ -1,0 +1,20 @@
+#!/bin/sh
+# vesta-url — print the Vesta Harness first-visit URL for the tailnet.
+#
+# dsh web prints a startup URL carrying a per-process launch token; opening it
+# once exchanges the token for a signed browser cookie (bound to the request
+# host) that survives service restarts. Run this after a restart when a new
+# browser or device needs to get in. Install: ~/.local/bin/vesta-url
+set -eu
+unit=vesta-harness
+pid=$(systemctl --user show -p MainPID --value "$unit")
+if [ -z "$pid" ] || [ "$pid" = "0" ]; then
+  echo "vesta-url: $unit is not running (systemctl --user status $unit)" >&2
+  exit 1
+fi
+tok=$(journalctl --user _PID="$pid" -o cat --no-pager 2>/dev/null | grep -oE 'token=[A-Za-z0-9_-]+' | tail -1 | cut -d= -f2)
+if [ -z "$tok" ]; then
+  echo "vesta-url: no startup URL in the journal for pid $pid yet; retry in a few seconds" >&2
+  exit 1
+fi
+echo "https://vesta.tail22b555.ts.net:8791/?token=$tok"
