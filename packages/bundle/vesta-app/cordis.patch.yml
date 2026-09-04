@@ -29,6 +29,23 @@
     - id: ui-vesta-brand
       name: '@deepseek-ai/dsh-client-ui-vesta-brand'
 
+    # ── voice: a LiveKit call as a modality of the Session ─────────────────
+    # Browser half: the composer mic button and the call HUD.
+    - id: ui-vesta-voice
+      name: '@deepseek-ai/dsh-client-ui-vesta-voice'
+
+    # Host half: room tokens, the agent bridge upgrade route, the spoken-mode
+    # prompt section, and the perception-toggle proxy. LiveKit credentials are
+    # credential references (LIVEKIT_API_KEY / LIVEKIT_API_SECRET in
+    # $DSH_HOME/.credentials.yaml); the SFU and the STT sidecar are the vesta
+    # livekit-voice stack (tailscale serve :8481 → livekit-server, loopback
+    # :8011 → livekit-media).
+    - id: vesta-voice
+      name: '@deepseek-ai/dsh-vesta-voice'
+      config:
+        livekitUrl: wss://vesta.tail22b555.ts.net:8481
+        mediaUrl: http://127.0.0.1:8011
+
     # ── host: vesta MCP servers ─────────────────────────────────────────────
     - id: mcp-vesta-memory
       name: '@deepseek-ai/dsh-mcp-client'

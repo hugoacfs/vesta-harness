@@ -7,7 +7,7 @@ Living document: agents working on this fork update the status table and the log
 | Phase | Goal | State |
 |---|---|---|
 | 0 | Fork online on vesta, styled, text-only: `vesta` profile, ember theme, Vesta brand, MCP rows; side-by-side on `:3081` / serve `:8791` | done 2026-09-05 (Landlock sandbox binary pending `musl-tools`) |
-| A | Voice into the session: host bridge plugin, mic + call HUD, Python agent bridge (feature-flagged) | pending |
+| A | Voice into the session: host bridge plugin, mic + call HUD, Python agent bridge (feature-flagged) | in progress |
 | B | Autonomy and approvals by voice; spoken-mode persona preset | pending |
 | C | Cutover `:8790`, retire the standalone `:8480` voice UI, move voice service sources into `services/`, upstream sync drill | pending |
 
@@ -42,10 +42,10 @@ Standing constraints: voice models run on the RTX 3060 only (`GPU-4c4e6e17-…`)
 
 ## Phase A — voice into the session
 
-1. Host plugin `packages/vesta/voice/` (`@deepseek-ai/dsh-vesta-voice`): config `bridgeUrl`, `livekitUrl`, credentials `LIVEKIT_API_KEY/SECRET` via `ctx.credentials`, `narrateTools`, `greeting`. Token route `registerFetchRoute('/api/vesta/voice/token')` → LiveKit JWT for room `dsh-<sessionId>`. Bridge client: reconnecting WS; `turn{room,text,meta}` → submit via `ctx.sessionController` prompt (`source:{kind:'user'}`); `session/event` → `assistant/chunk`→`speak`, `tool/call`→`status`, `turn/end`→`done`; `interrupt{room}` → `agent.cancel(cause, {keepInbox:true})`. Spoken-mode prompt section registered through `agent.ctx` while a room is bound.
-2. Client plugin `packages/client/ui-vesta-voice/`: mic button in `conversation.input.right`, call HUD in `conversation.input.overlay` (orb, state chip from `lk.agent.state`, mute, hide-emotions, end call); `livekit-client` bundled privately; copy in a locale dictionary.
-3. Python agent (`/srv/ai/compose/livekit-voice/agent/agent.py`), feature-flagged `DSH_BRIDGE_PORT=8490` (unset = today's direct-LiteLLM behaviour): WS server published `127.0.0.1:8490:8490`; custom `llm_node` streams `speak` deltas from the bridge; sentence-chunking to Kyutai; TTS sanitizer; barge-in → `interrupt`; room name → session binding.
-- Verify: press mic in a session, ask about the workspace → user turn in the chat, tool cards render, answer spoken; interrupt cancels; typed follow-up works; bridge + `[stt]` logs show timings; the 3090 untouched.
+1. Host plugin `packages/vesta/vesta-voice/` (`@deepseek-ai/dsh-vesta-voice`): config `livekitUrl`, `apiKeyRef`/`apiSecretRef` (credential references), `bridgePath`, `mediaUrl`, `tokenTtlSeconds`, `roomPrefix`. Routes on the authenticated `/api` channel: `GET /api/vesta/voice/token?sessionId=` (LiveKit JWT for room `dsh-<sessionId>`), `GET/POST /api/vesta/voice/emotion` (proxy to the STT sidecar's `/config`). Bridge: `ctx.webServer.registerUpgrade('/vesta/voice/bridge')`; each agent job dials it with `Authorization: Bearer <LiveKit secret>` and `X-Vesta-Room`; the Host resolves/resumes the Session's Agent (`ctx.sessionController.resolveAgent`), registers the spoken-mode section on `agent.ctx.systemPrompt`, relays `agent/assistant-stream` `text-delta` chunks as `speak`, `tool/call` as `status`, `turn/end` as `done`; `turn` → `sessionController.prompt` (`queue` when idle, `steer` when running); `interrupt` → `sessionController.cancel` (inbox kept). ✅ written 2026-09-05
+2. Client plugin `packages/client/ui-vesta-voice/`: mic button (`conversation.input.right`, order 40) and call HUD (`conversation.input.overlay`, order 2) over one store; `VoiceCallController` owns the LiveKit `Room` (token fetch, mic, agent audio, `lk.agent.state`, audio level → orb, perception toggle). `livekit-client` bundled privately; copy in the `vesta.voice` dictionary. ✅ written 2026-09-05
+3. Agent worker moved into the fork (`services/livekit-agent/agent.py`): `DSH_BRIDGE_URL` set + room `dsh-*` → `DshBridgeLLM` (a LiveKit `LLM` whose stream is the bridge's `speak` deltas, with `SpokenTextFilter` dropping fenced code from speech and stripping inline markdown); otherwise direct Qwen-via-LiteLLM as before (the standalone `:8480` UI keeps working). Barge-in cancels the LiveKit stream → `interrupt`. Compose (`deploy/vesta/livekit-voice.docker-compose.yml`): agent on `network_mode: host`, build context = the checkout, STT sidecar published `127.0.0.1:8011`. ✅ written 2026-09-05
+- Verify: press mic in a session, ask about the workspace → user turn in the chat, tool cards render, answer spoken; interrupt cancels; typed follow-up works; bridge + `[stt]` logs show timings; the 3090 untouched. ⏳
 
 ## Phase B — autonomy and approvals by voice
 

@@ -29,7 +29,9 @@
   "dependencies": {
     "@deepseek-ai/dsh-client-ui-vesta-brand": "workspace:^",
     "@deepseek-ai/dsh-client-ui-vesta-theme": "workspace:^",
-    "@deepseek-ai/dsh-mcp-client": "workspace:^"
+    "@deepseek-ai/dsh-client-ui-vesta-voice": "workspace:^",
+    "@deepseek-ai/dsh-mcp-client": "workspace:^",
+    "@deepseek-ai/dsh-vesta-voice": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"

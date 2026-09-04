@@ -1,0 +1,117 @@
+# Vesta voice — LiveKit stack (installed copy: /srv/ai/compose/livekit-voice/docker-compose.yml).
+# Ports bind to the tailnet + LAN IPs or loopback only (never 0.0.0.0).
+#
+# The agent worker runs on the host network so every per-room job process can
+# dial the Vesta Harness bridge on loopback (ws://127.0.0.1:3081/vesta/voice/bridge)
+# and reach the sidecars through their loopback-published ports. Rooms named
+# `dsh-<sessionId>` (minted by the Harness) bind to that Session; any other
+# room (the standalone :8480 UI) keeps the direct Qwen-via-LiteLLM brain.
+name: livekit-voice
+
+services:
+  livekit-server:
+    image: livekit/livekit-server:v1.13.6
+    container_name: livekit-server
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit/livekit.yaml"]
+    env_file: [.env]                      # provides LIVEKIT_KEYS
+    volumes:
+      - ./config/livekit.yaml:/etc/livekit/livekit.yaml:ro
+    ports:
+      - "192.168.0.2:7880:7880"           # signaling (fronted by tailscale serve :8481)
+      - "100.120.132.105:7880:7880"
+      - "192.168.0.2:7881:7881"           # WebRTC over TCP (fallback)
+      - "100.120.132.105:7881:7881"
+      - "192.168.0.2:7882:7882/udp"       # WebRTC media (muxed)
+      - "100.120.132.105:7882:7882/udp"
+    networks: [default]
+
+  # GPU STT sidecar: SenseVoice (3060) behind the OpenAI STT contract, plus the
+  # perception flag at /config. Published on loopback for the host-network agent
+  # and for the Harness's "hide emotions" proxy.
+  livekit-media:
+    build: ./media
+    image: livekit-media:latest
+    container_name: livekit-media
+    restart: unless-stopped
+    environment:
+      - ASR_MODEL=iic/SenseVoiceSmall     # SenseVoice: STT + emotion + audio events (laughter)
+      - ASR_DEVICE=cuda:0
+      - ASR_LANGUAGE=en
+      - HF_HOME=/models/hf
+    volumes:
+      - /srv/ai/models/voice-agent/hf:/models/hf
+    ports:
+      - "127.0.0.1:8011:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["GPU-4c4e6e17-74ee-b26e-9b6a-a047eaaa74e0"]  # RTX 3060 only
+              capabilities: [gpu]
+    networks: [default]
+
+  # CPU worker: Silero VAD + semantic turn-detector → STT/TTS sidecars; brain =
+  # the Vesta Harness Session over the bridge (or Qwen via LiteLLM for non-Harness rooms).
+  # Source of truth: services/livekit-agent in the vesta-harness checkout.
+  livekit-agent:
+    build: /home/hugo/code/vesta-harness/services/livekit-agent
+    image: livekit-agent:latest
+    container_name: livekit-agent
+    restart: unless-stopped
+    network_mode: host
+    env_file: [.env]                      # LIVEKIT_API_KEY/SECRET (secret = bridge bearer), LITELLM_KEY
+    environment:
+      - LIVEKIT_URL=ws://192.168.0.2:7880
+      - LITELLM_URL=http://192.168.0.2:4000/litellm/v1
+      - BRAIN_MODEL=default
+      - MEDIA_URL=http://127.0.0.1:8011/v1
+      - KYUTAI_URL=http://127.0.0.1:8010/v1
+      - SEARXNG_URL=http://127.0.0.1:8888     # direct-mode web_search only; not published today
+      - TTS_MODEL=kyutai/tts-1.6b-en_fr
+      - TTS_VOICE=expresso/ex03-ex01_calm_001_channel1_1143s.wav
+      - TTS_SPEED=1.2
+      - DSH_BRIDGE_URL=ws://127.0.0.1:3081/vesta/voice/bridge   # unset = direct mode for every room
+      - DSH_ROOM_PREFIX=dsh-
+      - GREETING=Hi, I'm Vesta. How can I help you today?
+      - BRIDGE_GREETING=
+    depends_on: [livekit-server, livekit-media]
+
+  # Next.js UI (LiveKit agent-starter-react, rebranded). Stopped; kept as a rollback.
+  livekit-frontend:
+    build: ./frontend
+    image: livekit-frontend:latest
+    container_name: livekit-frontend
+    restart: unless-stopped
+    env_file: [.env]                      # LIVEKIT_API_KEY / LIVEKIT_API_SECRET
+    environment:
+      - LIVEKIT_URL=wss://vesta.tail22b555.ts.net:8481   # public signaling (tailscale serve)
+      - IS_VERCEL_PREVIEW=true            # allow the token route to run; tailnet is the auth boundary
+      - AGENT_NAME=                       # blank = automatic agent dispatch
+    ports:
+      - "127.0.0.1:3900:3000"             # fronted by tailscale serve :8480 (3000 is taken by vesta-docs)
+    depends_on: [livekit-server]
+    networks: [default]
+
+  # Standalone Vesta-styled voice UI (FastAPI: serves the UI + mints room tokens).
+  # Retired in Phase C once the Harness call surface is approved.
+  livekit-webui:
+    build: ./webui
+    image: livekit-webui:latest
+    container_name: livekit-webui
+    restart: unless-stopped
+    env_file: [.env]                      # LIVEKIT_API_KEY / LIVEKIT_API_SECRET
+    environment:
+      - LIVEKIT_URL=wss://vesta.tail22b555.ts.net:8481
+      - MEDIA_URL=http://livekit-media:8000   # STT sidecar — emotion-sharing toggle
+    ports:
+      - "127.0.0.1:3010:3000"             # fronted by tailscale serve :8480
+    depends_on: [livekit-server]
+    networks: [default]
+
+networks:
+  default:
+  gateway:
+    external: true
+    name: local-gateway_default

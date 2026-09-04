@@ -1,0 +1,165 @@
+/* Mic button: a round composer control; ember while a call is live. */
+.mic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  corner-shape: round;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out), color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.mic:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.mic:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+.mic.live {
+  background: var(--vesta-ember-gradient, linear-gradient(115deg, #ffffff 20%, #ffc46b 62%, #ff7847 88%));
+  color: #0b0c10;
+}
+
+.mic:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Call HUD: a floating card in the composer overlay. */
+.hud {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-elevation-panel);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+}
+
+.orbWrap {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+}
+
+.orb {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  corner-shape: round;
+  background: radial-gradient(circle at 36% 30%, #fff3d9 0%, #ffc46b 32%, #ff7847 68%, #ff4d6d 100%);
+  box-shadow: 0 0 calc(10px + var(--vesta-orb-level, 0) * 26px) var(--vesta-glow, rgba(255, 120, 71, 0.45));
+  transform: scale(calc(1 + var(--vesta-orb-level, 0) * 0.35));
+  transition: transform 80ms linear, box-shadow 120ms linear;
+}
+
+.orb.thinking {
+  animation: vesta-orb-think 1.4s ease-in-out infinite;
+}
+
+.orb.listening {
+  box-shadow: 0 0 10px var(--vesta-glow, rgba(255, 120, 71, 0.45)), 0 0 0 4px rgba(66, 226, 156, 0.25);
+}
+
+@keyframes vesta-orb-think {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb {
+    transition: none;
+    transform: none;
+  }
+
+  .orb.thinking {
+    animation: none;
+  }
+}
+
+.state {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.stateLabel {
+  font-family: var(--vesta-font-display, 'Space Grotesk', 'Inter', system-ui, sans-serif);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.stateHint {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stateError {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+.action.active {
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--vesta-ember-1, #ffc46b);
+}
+
+.action.muted {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.action.end {
+  background: var(--dsw-alias-state-error-primary);
+  color: #ffffff;
+}
