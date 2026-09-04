@@ -1,0 +1,55 @@
+/* Vesta Harness global sheet: self-hosted fonts and the ambient ground.
+   Colors live in the token layer (tokens.ts); this sheet carries only what a
+   token cannot express. Font files are served from /vesta/fonts by the web
+   client's static dist server (apps/web/public/vesta/fonts, SIL OFL 1.1). */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('/vesta/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url('/vesta/fonts/space-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('/vesta/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Ambient ember ground (dark scheme only): a non-interactive fixed layer —
+   an ember glow rising from the top-left, a cool counter-glow bottom-right,
+   and a faint 48px grid fading toward the bottom. It sits at z-index 0 so
+   menus, popovers, and dialogs (positive z-index) stay above it. */
+body[data-ds-dark-theme]::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 45% at 8% 0%, rgba(255, 120, 71, 0.12), transparent 70%),
+    radial-gradient(45% 40% at 100% 100%, rgba(77, 147, 248, 0.06), transparent 70%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 48px);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.35) 100%);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  body[data-ds-dark-theme]::after {
+    display: none;
+  }
+}

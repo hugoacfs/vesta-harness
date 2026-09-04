@@ -1,0 +1,54 @@
+/* Brand colors come from the Vesta theme's --vesta-* tokens; every use carries
+   a literal fallback so the brand still renders when the theme row is absent. */
+
+.orb {
+  display: block;
+}
+
+.name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--vesta-font-display, 'Space Grotesk', 'Inter', system-ui, sans-serif);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.word {
+  background: var(--vesta-ember-gradient, linear-gradient(115deg, #ffffff 20%, #ffc46b 62%, #ff7847 88%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.suffix {
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+}
+
+.heroOrb {
+  filter: drop-shadow(0 0 10px var(--vesta-glow, rgba(255, 120, 71, 0.45)));
+  animation: vesta-breathe 3.6s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes vesta-breathe {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 8px var(--vesta-glow, rgba(255, 120, 71, 0.45)));
+  }
+
+  50% {
+    transform: scale(1.06);
+    filter: drop-shadow(0 0 16px var(--vesta-glow, rgba(255, 120, 71, 0.45)));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroOrb {
+    animation: none;
+  }
+}

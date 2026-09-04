@@ -1,0 +1,6 @@
+# Your patch layer for the `vesta` profile, applied after every bundle layer
+# (dsh-base, dsh-web-app, dsh-vesta-app): a top-level YAML array of loader
+# patch entries (id-targeted config overrides, disables, and insert lists;
+# `!!js` expressions allowed). Deployment-wide choices live in the
+# dsh-vesta-app bundle (versioned); keep machine-local tweaks here.
+[]

@@ -1,0 +1,10 @@
+Vesta Harness self-hosted web fonts (latin subsets, variable weight)
+
+- inter-latin.woff2           Inter            © The Inter Project Authors   https://github.com/rsms/inter
+- space-grotesk-latin.woff2   Space Grotesk    © Florian Karsten             https://github.com/floriankarsten/space-grotesk
+- jetbrains-mono-latin.woff2  JetBrains Mono   © The JetBrains Mono Project  https://github.com/JetBrains/JetBrainsMono
+
+All three families are licensed under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org). The files are the latin subsets published by the
+Google Fonts CSS API and are served from /vesta/fonts by the web client's static
+dist server; @deepseek-ai/dsh-client-ui-vesta-theme declares the @font-face rules.

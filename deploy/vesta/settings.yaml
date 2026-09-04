@@ -1,0 +1,38 @@
+# Vesta Harness user settings — template for $DSH_HOME/settings.yaml
+# (DSH_HOME=~/.vesta-harness). Ported from the rc.7 ~/.dsh/settings.yaml on
+# 2026-09-04. Contains no secrets: the provider key is read from the
+# environment variable named by `apiKeyEnv`, which $DSH_HOME/.credentials.yaml
+# supplies (copy that file by hand, chmod 600; never commit it).
+ui-onboarding:
+  welcomeNoticeVersion: 2026-08-13.1
+llm-pi-ai:
+  providers:
+    vesta:
+      displayName: Vesta (internal)
+      api: openai-completions
+      baseURL: http://192.168.0.2:4000/litellm/v1
+      apiKeyEnv: VESTA_API_KEY
+      models:
+        # contextWindow/maxTokens mirror the local-gateway LiteLLM caps
+        # (vLLM lane 114688 in / 16384 out; Ornith lane 65536 in / 8192 out).
+        - id: default
+          name: Qwen 27B
+          contextWindow: 114688
+          maxTokens: 16384
+        - id: assistant
+          name: Ornith 9B
+          contextWindow: 65536
+          maxTokens: 8192
+# Vesta is dark-first: the ember token layer carries both palettes, but the
+# ambient ground and the brand gradient are designed for dark.
+ui-theme:
+  preference: dark
+agent-default-model:
+  provider: vesta
+  model: default
+agent-presets:
+  default: vesta-orch
+llm-deepseek:
+  models: []
+permission:
+  defaultPreset: danger-full-access

@@ -1,0 +1,21 @@
+# Vesta Harness — systemd --user unit (install: ~/.config/systemd/user/vesta-harness.service)
+# Runs the built `dsh` CLI from the source checkout with the `vesta` profile,
+# bound to loopback; tailscale serve fronts it on the tailnet (see README.md).
+[Unit]
+Description=Vesta Harness (DeepSeek Harness fork) web UI
+Documentation=https://github.com/hugoacfs/vesta-harness
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/vesta-harness
+Environment=DSH_HOME=%h/.vesta-harness
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin:%h/.local/share/pnpm
+ExecStart=/usr/bin/env node %h/code/vesta-harness/apps/cli/lib/bin.js --profile vesta --host 127.0.0.1 --port 3081 --trusted-host vesta.tail22b555.ts.net --no-open
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,34 @@
+# The dsh-vesta-app bundle patch: Vesta Harness over the dsh-web-app layer.
+# Applied after dsh-base and dsh-web-app; the profile's own cordis.patch.yml
+# and any --patch overlays still come after it.
+#
+# Vesta adds three things to the stock web application:
+#   * the ember theme and the Vesta brand for the browser client (dsh.client rows);
+#   * the vesta MCP servers (memory + search), reached over loopback through
+#     tailscale-serve + nginx (streamable-http at /mcp). Tools register as
+#     mcp__memory__* / mcp__search__*.
+# Everything else (model route, presets, permissions, theme preference) is
+# user settings in $DSH_HOME/settings.yaml — see deploy/vesta/README.md.
+
+- insert:
+    # ── browser: Vesta look ────────────────────────────────────────────────
+    - id: ui-vesta-theme
+      name: '@deepseek-ai/dsh-client-ui-vesta-theme'
+
+    - id: ui-vesta-brand
+      name: '@deepseek-ai/dsh-client-ui-vesta-brand'
+
+    # ── host: vesta MCP servers ─────────────────────────────────────────────
+    - id: mcp-vesta-memory
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: memory
+        transport: streamable-http
+        url: http://127.0.0.1:7332/mcp
+
+    - id: mcp-vesta-search
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: search
+        transport: streamable-http
+        url: http://127.0.0.1:7331/mcp
