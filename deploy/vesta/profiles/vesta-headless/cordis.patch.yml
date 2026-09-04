@@ -1,0 +1,4 @@
+# One-shot CLI sibling of the `vesta` profile (same base + Vesta bundle, no web
+# server). Used for smoke checks from a shell; keep it empty unless a check
+# needs a local override.
+[]

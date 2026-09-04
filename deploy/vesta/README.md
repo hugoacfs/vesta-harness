@@ -61,6 +61,16 @@ tailscale serve --bg --https=8791 http://127.0.0.1:3081
 - A new session answers through Qwen (`default`); `mcp__memory__*` / `mcp__search__*` appear in the tool list; the hero shows `vesta-orch`; `/permission` lists `read-only`, `workspace-write`, `danger-full-access`.
 - `:8790` still serves the old install.
 
+## CLI smoke check (no browser)
+
+`profiles/vesta-headless` stacks the same layers without the web server, so a one-shot run proves the model route, credentials, preset, and MCP tools from a shell:
+
+```bash
+cd ~/code/vesta-harness && DSH_HOME=~/.vesta-harness node apps/cli/lib/bin.js --profile vesta-headless "Reply with exactly the word pong and nothing else."
+```
+
+Ask it to "list the tool names starting with mcp__" to confirm the memory and search servers are mounted.
+
 ## Update
 
 ```bash
