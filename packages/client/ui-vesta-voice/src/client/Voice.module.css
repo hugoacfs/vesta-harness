@@ -34,12 +34,18 @@
   cursor: default;
 }
 
-/* Call HUD: a floating card in the composer overlay. */
+/* Call HUD: floats above the composer card. The overlay anchor is a zero-height
+   absolute box pinned to the card's top edge (the slash menu uses the same
+   anchor), so the HUD positions itself against it rather than flowing. */
 .hud {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 90;
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 0 0 8px;
   padding: 10px 12px;
   border: 0;
   border-radius: 16px;

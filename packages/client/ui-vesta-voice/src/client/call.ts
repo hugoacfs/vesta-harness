@@ -110,6 +110,10 @@ export class VoiceCallController {
       void this.refreshEmotion()
     } catch (error) {
       actions.failed(messageOf(error))
+      // Leave the room on the failure path too, or the participant lingers
+      // (and the agent stays linked to a browser that never publishes).
+      this.room = undefined
+      await room.disconnect()
       await this.teardown(true)
     }
   }

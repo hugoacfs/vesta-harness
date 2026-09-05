@@ -75,7 +75,7 @@ services:
       - DSH_BRIDGE_URL=ws://127.0.0.1:3081/vesta/voice/bridge   # unset = direct mode for every room
       - DSH_ROOM_PREFIX=dsh-
       - GREETING=Hi, I'm Vesta. How can I help you today?
-      - BRIDGE_GREETING=
+      - BRIDGE_GREETING=Hi, I'm listening.
     depends_on: [livekit-server, livekit-media]
 
   # Next.js UI (LiveKit agent-starter-react, rebranded). Stopped; kept as a rollback.

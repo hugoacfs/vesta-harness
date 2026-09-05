@@ -32,6 +32,7 @@ from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
+    RoomInputOptions,
     RunContext,
     WorkerOptions,
     cli,
@@ -368,7 +369,15 @@ async def entrypoint(ctx: JobContext) -> None:
         allow_interruptions=True,          # barge-in: user speech cuts off the reply
         min_interruption_duration=0.5,
     )
-    await session.start(agent=Assistant(bridged=bridge is not None), room=ctx.room)
+    # Keep the agent alive across browser reconnects: the default closes the
+    # session when the linked participant drops, which left later joins of the
+    # same room with no agent at all. RoomIO re-links the next participant; the
+    # job ends when LiveKit closes the empty room.
+    await session.start(
+        agent=Assistant(bridged=bridge is not None),
+        room=ctx.room,
+        room_input_options=RoomInputOptions(close_on_disconnect=False),
+    )
     greeting = BRIDGE_GREETING if bridge is not None else GREETING
     if greeting:
         # A fixed TTS line, NOT an LLM call: a system-only generate_reply 400s on LiteLLM.
