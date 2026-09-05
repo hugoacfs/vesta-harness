@@ -60,6 +60,8 @@ export class VoiceCallController {
   private audio: HTMLMediaElement[] = []
   private levelTimer: ReturnType<typeof setInterval> | undefined
   private stopAnalyser: (() => Promise<void>) | undefined
+  /** True while a failed start is leaving the room, so its Disconnected event keeps the error state. */
+  private failing = false
 
   /**
    * Adopt the store's bound actions; both slot registrations share one store,
@@ -93,7 +95,9 @@ export class VoiceCallController {
       const state = agentStateOf(changed[AGENT_STATE_ATTRIBUTE])
       if (state !== undefined) actions.agentState(state)
     })
-    room.on(RoomEvent.Disconnected, () => { void this.teardown() })
+    // A failed start disconnects deliberately; that disconnect must not wipe
+    // the error the HUD is about to show.
+    room.on(RoomEvent.Disconnected, () => { void this.teardown(this.failing) })
     try {
       const response = await fetch(new URL(`${TOKEN_PATH}?sessionId=${encodeURIComponent(sessionId)}`, hostBase()), {
         credentials: 'same-origin',
@@ -112,9 +116,11 @@ export class VoiceCallController {
       actions.failed(messageOf(error))
       // Leave the room on the failure path too, or the participant lingers
       // (and the agent stays linked to a browser that never publishes).
+      this.failing = true
       this.room = undefined
       await room.disconnect()
       await this.teardown(true)
+      this.failing = false
     }
   }
 

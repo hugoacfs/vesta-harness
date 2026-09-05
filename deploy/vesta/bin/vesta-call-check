@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""vesta-call-check — a synthetic caller for the Harness voice path.
+
+Joins the LiveKit room of one Session exactly like a browser would (a
+STANDARD participant with a microphone track), plays a WAV of spoken speech
+into the room, and reports what the agent did: its published `lk.agent.state`
+transitions, the audio it spoke back (frames received), and the transcript
+the STT sidecar produced. Run inside the agent container (it has the SDKs and
+the LiveKit credentials):
+
+  docker exec -i livekit-agent python - <sessionId> </path/inside/container.wav
+
+  vesta-call-check <sessionId> <wav path> [seconds to wait, default 40]
+"""
+import asyncio
+import sys
+import time
+import wave
+
+from livekit import api, rtc
+
+LIVEKIT_URL = "ws://192.168.0.2:7880"
+PREFIX = "dsh-"
+
+
+def token(room: str) -> str:
+    return (
+        api.AccessToken()  # LIVEKIT_API_KEY / LIVEKIT_API_SECRET from the environment
+        .with_identity(f"probe-{int(time.time()) % 100000}")
+        .with_name("Probe")
+        .with_grants(api.VideoGrants(room_join=True, room=room, can_publish=True, can_subscribe=True))
+        .to_jwt()
+    )
+
+
+async def play(source: rtc.AudioSource, path: str) -> None:
+    with wave.open(path, "rb") as wav:
+        rate, channels, width = wav.getframerate(), wav.getnchannels(), wav.getsampwidth()
+        assert width == 2, "16-bit PCM expected"
+        chunk = rate // 100  # 10 ms
+        while True:
+            data = wav.readframes(chunk)
+            if not data:
+                break
+            frame = rtc.AudioFrame(data=data, sample_rate=rate, num_channels=channels, samples_per_channel=len(data) // (2 * channels))
+            await source.capture_frame(frame)
+    await source.wait_for_playout()
+
+
+async def main(session_id: str, wav_path: str, wait_s: float) -> int:
+    room_name = f"{PREFIX}{session_id}"
+    with wave.open(wav_path, "rb") as wav:
+        rate, channels = wav.getframerate(), wav.getnchannels()
+    room = rtc.Room()
+    states: list[tuple[float, str]] = []
+    heard = {"frames": 0, "ms": 0.0}
+    t0 = time.monotonic()
+
+    @room.on("participant_attributes_changed")
+    def _attrs(changed: dict, participant: rtc.Participant) -> None:
+        state = changed.get("lk.agent.state")
+        if state:
+            states.append((round(time.monotonic() - t0, 1), state))
+            print(f"  [{states[-1][0]:5.1f}s] agent state: {state}", flush=True)
+
+    @room.on("track_subscribed")
+    def _sub(track: rtc.Track, publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant) -> None:
+        print(f"  subscribed to {participant.identity} {track.kind}", flush=True)
+        if track.kind == rtc.TrackKind.KIND_AUDIO:
+            asyncio.ensure_future(count(rtc.AudioStream(track)))
+
+    async def count(stream: rtc.AudioStream) -> None:
+        async for event in stream:
+            heard["frames"] += 1
+            heard["ms"] += event.frame.samples_per_channel / event.frame.sample_rate * 1000
+
+    await room.connect(LIVEKIT_URL, token(room_name))
+    print(f"joined {room_name} as {room.local_participant.identity}", flush=True)
+    for p in room.remote_participants.values():
+        state = p.attributes.get("lk.agent.state")
+        if state:
+            states.append((0.0, state))
+            print(f"  [  0.0s] agent state: {state} (on join)", flush=True)
+    source = rtc.AudioSource(rate, channels)
+    track = rtc.LocalAudioTrack.create_audio_track("microphone", source)
+    await room.local_participant.publish_track(track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
+    await asyncio.sleep(2.0)  # let the agent link + greet
+    rounds = int(sys.argv[4]) if len(sys.argv) > 4 else 1
+    for n in range(1, rounds + 1):
+        print(f"playing question (round {n})...", flush=True)
+        await play(source, wav_path)
+        asked = time.monotonic()
+        print("question played; waiting for the reply...", flush=True)
+        first_speech = None
+        deadline = asked + wait_s
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.2)
+            later = [(t, s) for t, s in states if t0 + t >= asked]
+            if first_speech is None and any(s == "speaking" for _, s in later):
+                first_speech = next(t0 + t for t, s in later if s == "speaking")
+                print(f"  reply started {first_speech - asked:.1f}s after the question ended", flush=True)
+            if first_speech is not None and later and later[-1][1] == "listening" and t0 + later[-1][0] > first_speech:
+                break
+        if first_speech is None:
+            print("  no reply within the wait", flush=True)
+        await asyncio.sleep(1.0)
+    await room.disconnect()
+    print(f"agent audio received: {heard['frames']} frames, {heard['ms'] / 1000:.1f}s")
+    print("states:", " -> ".join(s for _, s in states) or "(none)")
+    spoke = heard["ms"] > 500
+    return 0 if spoke else 2
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print(__doc__)
+        raise SystemExit(64)
+    sys.exit(asyncio.run(main(sys.argv[1], sys.argv[2], float(sys.argv[3]) if len(sys.argv) > 3 else 40.0)))
