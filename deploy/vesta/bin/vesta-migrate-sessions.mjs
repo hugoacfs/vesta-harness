@@ -8,9 +8,10 @@
 // Pre-migrating here keeps the web process's session index from doing a
 // multi-second migration inside a search request (which aborts the search).
 //
-// Forks (headers with parentSession/seedLength, whose own events are numbered
-// from seq 0 in rc.7) are skipped unless --include-forks is given: the released
-// v0 → v1 edge treats seq < seedLength as inherited, so they do not migrate cleanly.
+// Forks (parentSession + seedLength) and subagent children (origin: subagent, bare
+// uuid directory names) migrate through the same edges; a fork of a few hundred
+// thousand inherited events takes ~30 s, which is exactly why it must not happen
+// inside the web process's search request. --skip-forks leaves both kinds out.
 //
 // Runs from anywhere inside the built checkout (it resolves the provider package relative to itself):
 //   node ~/code/vesta-harness/deploy/vesta/bin/vesta-migrate-sessions.mjs ~/.dsh/sessions ~/.vesta-harness/sessions
@@ -26,11 +27,11 @@ const { Context } = await import(require.resolve('@deepseek-ai/cordis'))
 const Provider = (await import(join(providerDir, 'lib/index.js'))).default
 
 const args = process.argv.slice(2)
-const includeForks = args.includes('--include-forks')
+const skipForks = args.includes('--skip-forks')
 const dryRun = args.includes('--dry-run')
 const [sourceRoot, targetRoot] = args.filter(a => !a.startsWith('--'))
 if (!sourceRoot || !targetRoot) {
-  console.error('usage: vesta-migrate-sessions.mjs [--dry-run] [--include-forks] <source sessions root> <target sessions root>')
+  console.error('usage: vesta-migrate-sessions.mjs [--dry-run] [--skip-forks] <source sessions root> <target sessions root>')
   process.exit(64)
 }
 
@@ -52,15 +53,15 @@ for (const workspace of readdirSync(sourceRoot)) {
   if (!statSync(sourceWs).isDirectory()) continue
   const targetWs = join(targetRoot, workspace)
   for (const name of readdirSync(sourceWs)) {
-    if (!name.startsWith('session-')) continue
     const sourceDir = join(sourceWs, name)
+    if (!statSync(sourceDir).isDirectory()) continue
     const targetDir = join(targetWs, name)
     const header = headerOf(sourceDir)
     if (header === undefined) { console.log(`skip ${name}: no readable header`); continue }
     if (existsSync(targetDir)) { summary.skippedPresent += 1; continue }
-    if (header.parentSession !== undefined && !includeForks) {
+    if (header.parentSession !== undefined && skipForks) {
       summary.skippedForks += 1
-      console.log(`skip ${name}: fork of ${header.parentSession} (seedLength ${header.seedLength}); use --include-forks to try`)
+      console.log(`skip ${name}: child of ${header.parentSession} (${header.origin ?? 'fork'})`)
       continue
     }
     if (dryRun) { console.log(`would migrate ${workspace}/${name}`); continue }

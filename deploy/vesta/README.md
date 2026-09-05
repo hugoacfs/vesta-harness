@@ -138,7 +138,7 @@ systemctl --user stop vesta-harness && python3 ~/code/vesta-harness/deploy/vesta
 
 The attach step puts the migrated sessions into the dsh-chat sidebar group (otherwise they sit under "Ungrouped"). Titles appear once each session has been opened once (the list reads the projection cache only); open each row once, or let them fill in as you click.
 
-Forks (headers with `parentSession` + `seedLength`; rc.7 numbered their own events from seq 0) are skipped: the released v0 → v1 edge treats `seq < seedLength` as inherited, so they need their parent's prefix reconstructed first. They stay readable in the rc.7 install (`:8791` while it is up).
+Forks (headers with `parentSession` + `seedLength`) migrate too, at ~30 s each for a few hundred thousand inherited events, which is why the script pre-migrates instead of leaving it to the web process. rc.7's subagent child sessions (`origin: subagent`, bare-uuid directories) are refused by the current codec ("subagent/descriptor uses unsupported descriptor version 2"); the script removes the failed copy again so the index stays healthy. They never appear in the sidebar; only the parents' subagent detail views lose them. rc.7 had 11 sessions archived (`~/.dsh/storages/workspace.json` → `archivedSessionIds`); the migration leaves everything visible.
 
 ## Cutover (done 2026-09-05) and rollback
 

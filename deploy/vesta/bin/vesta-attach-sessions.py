@@ -8,7 +8,9 @@ under "Ungrouped". Run with the harness STOPPED (the controller owns the file):
   systemctl --user stop vesta-harness && python3 vesta-attach-sessions.py && systemctl --user start vesta-harness
 
 Attaches every session in the dsh-chat store whose header cwd is the workspace
-path, skipping forks, keeping a .bak copy of the account file.
+path, including forks; subagent children (origin: subagent) belong to their
+parent's subagent tree, not the sidebar, so they are left out. Keeps a .bak copy
+of the account file.
 """
 import json, os, sys, time, shutil
 path = os.path.expanduser('~/.vesta-harness/storages/workspace.json')
@@ -19,7 +21,7 @@ have = set(ws['sessionIds'])
 # every session dir in the dsh-chat store that is not yet attached, newest created first
 cands = []
 for name in os.listdir(live):
-    if not name.startswith('session-') or name in have:
+    if name in have:
         continue
     zst = os.path.join(live, name, 'session.v2.jsonl.zstd')
     if not os.path.exists(zst):
@@ -29,7 +31,7 @@ for name in os.listdir(live):
         h = json.loads(first)
     except Exception:
         continue
-    if h.get('cwd') != ws['path'] or h.get('parentSession'):
+    if h.get('cwd') != ws['path'] or h.get('origin') == 'subagent':
         continue
     cands.append((h['createdAt'], name))
 cands.sort(reverse=True)
