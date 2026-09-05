@@ -86,7 +86,28 @@ cp ~/code/vesta-harness/deploy/vesta/livekit-voice.docker-compose.yml /srv/ai/co
 
 Voice replies skip Qwen's thinking phase: `settings.yaml` declares `reasoning: medium` on the `vesta` provider (typed sessions keep thinking) and, on the `default` model, `reasoningEfforts: {off: null, medium: medium}` plus `compat.thinkingFormat: qwen-chat-template`; the bridge selects `off` for a Session while its call is bound (pi-ai then sends `chat_template_kwargs.enable_thinking=false`) and restores the previous effort when the call ends.
 
-Checks: `docker logs -f livekit-agent` shows `bridge bound: room=dsh-… session=…` when a call starts from the Harness; `journalctl --user -u vesta-harness -f` shows `vesta-voice: room bound to session …`; `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3081/vesta/voice/bridge` answers `404`/`426` without an upgrade (the route exists only for WebSocket upgrades). Rollback: remove `DSH_BRIDGE_URL` from the agent service (direct mode for every room) or restore the previous compose file.
+Checks: `docker logs -f livekit-agent` shows `bridge bound: room=dsh-… session=… permission=…` when a call starts from the Harness; `journalctl --user -u vesta-harness -f` shows `vesta-voice: room bound to session …`; `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3081/vesta/voice/bridge` answers `404`/`426` without an upgrade (the route exists only for WebSocket upgrades). Rollback: remove `DSH_BRIDGE_URL` from the agent service (direct mode for every room) or restore the previous compose file.
+
+## Voice commands and approvals (Phase B)
+
+During a call these utterances are handled by the agent worker and never reach the model:
+
+| Say | Effect |
+|---|---|
+| "stop", "cancel that", "never mind" | cancels the running turn (`interrupt`), keeps queued work |
+| "switch to safe mode" / "read-only mode" | `permission/preset` → `read-only` |
+| "switch to workspace mode" | → `workspace-write` |
+| "switch to full access mode" / "dangerous mode" | → `danger-full-access` |
+
+A permission utterance needs a verb (switch, change, set, go, put, use, give…) and a mode word (mode, permission, access), so "list files in workspace mode" style false positives stay rare. The harness confirms aloud ("Switched to read-only mode.") and the header's permission selector updates.
+
+When a tool call needs approval (sandbox escalation in `read-only` / `workspace-write`), the assistant asks aloud ("The bash tool wants workspace write access, to create the notes file. Allow it?") and the on-screen card appears too. Answer with "yes" / "no" (or click); the first answer wins, the card closes on a spoken answer, and the turn continues with the assistant's follow-up spoken unprompted. Without the Landlock binary (see Prerequisites) the non-escalated commands in those modes fail closed, so the model escalates more often; that is expected until `musl-tools` is installed.
+
+Scripted check from the agent container (WAVs made with the TTS sidecar; `settle` catches the unprompted continuation):
+
+```bash
+docker cp ~/code/vesta-harness/deploy/vesta/bin/vesta-call-check livekit-agent:/tmp/call-check.py && docker exec livekit-agent python /tmp/call-check.py <sessionId> /tmp/safe.wav,/tmp/mkfile.wav,/tmp/yes.wav 40 30
+```
 
 ## CLI smoke check (no browser)
 

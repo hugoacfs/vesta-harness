@@ -10,7 +10,10 @@ Semantic turn-taking (LiveKit turn-detector) + Silero VAD + real barge-in, with:
           the brain is the Vesta Harness Session behind that id. Each finished
           utterance is sent over a WebSocket to the Harness, which runs it as a
           normal user turn with the Session's tools and autonomy level and
-          streams the assistant's text back to be spoken.
+          streams the assistant's text back to be spoken. Approval questions
+          from the Harness are asked aloud and answered with a spoken yes/no
+          (racing the on-screen card); "stop" and "switch to … mode" are
+          handled here as commands and never reach the model.
         * direct mode (no bridge, or the room is not a Harness room): Qwen
           through LiteLLM with thinking disabled, plus a native web_search tool.
 
@@ -64,6 +67,7 @@ DSH_ROOM_PREFIX = os.environ.get("DSH_ROOM_PREFIX", "dsh-")
 GREETING = os.environ.get("GREETING", "")                       # spoken once on join when set
 BRIDGE_GREETING = os.environ.get("BRIDGE_GREETING", "")         # bridge-mode variant (default: silent)
 TURN_TIMEOUT_S = float(os.environ.get("DSH_TURN_TIMEOUT_S", "600"))  # a long tool turn may take minutes
+COMMAND_TIMEOUT_S = float(os.environ.get("DSH_COMMAND_TIMEOUT_S", "10"))  # host reply to a spoken command
 
 SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", (
     "You are Vesta's voice assistant. You are speaking out loud, so keep replies "
@@ -165,6 +169,73 @@ class SpokenTextFilter:
         return "" if self._in_fence else tail
 
 
+# ---------------------------------------------------------------- spoken commands
+_PERCEPTION_NOTE = re.compile(r"\s*\[tone:[^\]]*\]\s*$", re.IGNORECASE)
+_YES = re.compile(
+    r"^\W*(yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|allow|allowed|approve|approved|fine|"
+    r"please do|go for it|confirm|confirmed|affirmative|absolutely|of course)\b", re.IGNORECASE)
+_NO = re.compile(
+    r"^\W*(no|nope|nah|don'?t|do not|deny|denied|reject|rejected|cancel|stop|never|negative|"
+    r"not now|refuse)\b", re.IGNORECASE)
+_STOP = re.compile(
+    r"^\W*((stop\W*)+|stop it|stop that|cancel|cancel that|never ?mind|abort|halt|"
+    r"that'?s enough|enough)\W*$", re.IGNORECASE)
+_PERMISSION_CONTEXT = re.compile(r"\b(mode|permissions?|access( level)?|autonomy)\b", re.IGNORECASE)
+_PERMISSION_VERB = re.compile(
+    r"\b(switch|change|set|go|put|move|enter|use|turn|activate|enable|give|grant|drop)\b", re.IGNORECASE)
+_PRESET_WORDS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b(read[- ]?only|safe|safest|restricted|locked[- ]down)\b", re.IGNORECASE), "read-only"),
+    (re.compile(r"\b(workspace|work ?space|normal|standard|default)\b", re.IGNORECASE), "workspace-write"),
+    (re.compile(r"\b(full|danger(ous)?|unrestricted|unsafe|everything|god)\b", re.IGNORECASE), "danger-full-access"),
+]
+_ESCALATION = re.compile(r"^escalate sandbox to (\S+):\s*(.*)$", re.DOTALL)
+_MODE_SPOKEN = {"read-only": "read-only access", "workspace-write": "workspace write access",
+                "danger-full-access": "full access"}
+
+
+def strip_perception(text: str) -> str:
+    """Drop the STT sidecar's trailing '[tone: …]' note before matching commands."""
+    return _PERCEPTION_NOTE.sub("", text).strip()
+
+
+def classify_decision(text: str) -> bool | None:
+    """True for a spoken yes, False for a spoken no, None when the utterance is neither."""
+    t = strip_perception(text)
+    if _NO.match(t):
+        return False
+    if _YES.match(t):
+        return True
+    return None
+
+
+def is_stop(text: str) -> bool:
+    return _STOP.match(strip_perception(text)) is not None
+
+
+def permission_request(text: str) -> str | None:
+    """The preset a 'switch to … mode' utterance names, or None when it is not such a command."""
+    t = strip_perception(text)
+    if len(t.split()) > 12 or not _PERMISSION_CONTEXT.search(t) or not _PERMISSION_VERB.search(t):
+        return None
+    for pattern, preset in _PRESET_WORDS:
+        if pattern.search(t):
+            return preset
+    return None
+
+
+def approval_question(tool: str, reason: str | None) -> str:
+    """One spoken sentence for a Harness approval request."""
+    name = f"The {tool.replace('_', ' ')} tool"
+    m = _ESCALATION.match(reason or "")
+    if m:
+        mode = _MODE_SPOKEN.get(m.group(1), m.group(1).replace("-", " "))
+        why = m.group(2).strip().rstrip(".")
+        return f"{name} wants {mode}{', to ' + why[0].lower() + why[1:] if why else ''}. Allow it?"
+    if reason:
+        return f"{name} needs approval: {reason.strip().rstrip('.')}. Allow it?"
+    return f"{name} needs your approval. Allow it?"
+
+
 # ---------------------------------------------------------------- bridge
 class DshBridge:
     """One WebSocket to the Harness per room/job. Sends utterances, receives the reply stream."""
@@ -177,8 +248,19 @@ class DshBridge:
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._reader: asyncio.Task[None] | None = None
         self._turn: asyncio.Queue[dict[str, Any]] | None = None
+        # Assistant text that arrives while no LLM stream is open (a typed turn
+        # during the call, the continuation after an approval) is spoken through
+        # session.say() from this queue; None ends the utterance.
+        self._passive: asyncio.Queue[str | None] | None = None
+        self._command_reply: asyncio.Future[str] | None = None
+        self._session: AgentSession | None = None
         self.session_id: str | None = None
+        self.permission: str = "custom"
+        self.pending_approval: dict[str, Any] | None = None
         self.closed = asyncio.Event()
+
+    def attach(self, session: AgentSession) -> None:
+        self._session = session
 
     async def connect(self, timeout: float = 10.0) -> None:
         self._http = aiohttp.ClientSession()
@@ -192,8 +274,9 @@ class DshBridge:
         if ready.get("type") != "ready":
             raise RuntimeError(f"bridge handshake: unexpected {ready!r}")
         self.session_id = str(ready.get("sessionId"))
+        self.permission = str(ready.get("permission") or "custom")
         self._reader = asyncio.create_task(self._read(), name="dsh-bridge-reader")
-        log.info("bridge bound: room=%s session=%s", self._room, self.session_id)
+        log.info("bridge bound: room=%s session=%s permission=%s", self._room, self.session_id, self.permission)
 
     async def _read(self) -> None:
         assert self._ws is not None
@@ -207,19 +290,98 @@ class DshBridge:
                     frame = json.loads(msg.data)
                 except ValueError:
                     continue
-                kind = frame.get("type")
-                if kind in ("speak", "done", "error", "status") and self._turn is not None:
-                    self._turn.put_nowait(frame)
-                elif kind == "status":
-                    log.info("harness tool: %s", frame.get("tool"))
+                self._dispatch(frame)
         finally:
             self.closed.set()
             if self._turn is not None:
                 self._turn.put_nowait({"type": "error", "message": "bridge closed"})
+            self._end_passive()
+
+    def _dispatch(self, frame: dict[str, Any]) -> None:
+        kind = frame.get("type")
+        if kind == "approval":
+            self.pending_approval = {"id": str(frame.get("id")), "tool": str(frame.get("tool", "a tool")),
+                                     "reason": frame.get("reason")}
+            question = approval_question(self.pending_approval["tool"], self.pending_approval["reason"])
+            log.info("harness approval asked: %s", question)
+            if self._turn is not None:
+                # The open stream speaks the question and ends; the turn's later text is spoken passively.
+                self._turn.put_nowait({"type": "ask", "text": question})
+            else:
+                self._end_passive()
+                self._say(question)
+        elif kind == "approval-done":
+            if self.pending_approval is not None and self.pending_approval["id"] == str(frame.get("id")):
+                log.info("harness approval settled: %s", frame.get("outcome"))
+                self.pending_approval = None
+        elif kind == "say":
+            text = str(frame.get("text", ""))
+            if self._command_reply is not None and not self._command_reply.done():
+                self._command_reply.set_result(text)
+            else:
+                self._say(text)
+        elif kind == "error" and self._command_reply is not None and not self._command_reply.done():
+            self._command_reply.set_result(str(frame.get("message", "That did not work.")))
+        elif self._turn is not None:
+            if kind in ("speak", "done", "error", "status"):
+                self._turn.put_nowait(frame)
+        elif kind == "speak":
+            self._passive_feed(str(frame.get("text", "")))
+        elif kind == "done":
+            self._end_passive()
+        elif kind == "status":
+            log.info("harness tool: %s", frame.get("tool"))
+        elif kind == "error":
+            log.warning("harness error outside a turn: %s", frame.get("message"))
+
+    def _say(self, text: str) -> None:
+        if self._session is None or not text:
+            return
+        try:
+            self._session.say(text)
+        except Exception as e:  # noqa: BLE001
+            log.warning("say failed: %s", e)
+
+    def _passive_feed(self, delta: str) -> None:
+        if self._session is None:
+            return
+        if self._passive is None:
+            queue: asyncio.Queue[str | None] = asyncio.Queue()
+            self._passive = queue
+
+            async def spoken() -> Any:
+                text_filter = SpokenTextFilter()
+                while True:
+                    item = await queue.get()
+                    if item is None:
+                        tail = text_filter.flush()
+                        if tail:
+                            yield tail
+                        return
+                    piece = text_filter.feed(item)
+                    if piece:
+                        yield piece
+
+            try:
+                self._session.say(spoken())
+            except Exception as e:  # noqa: BLE001
+                log.warning("passive say failed: %s", e)
+                self._passive = None
+                return
+        self._passive.put_nowait(delta)
+
+    def _end_passive(self) -> None:
+        if self._passive is not None:
+            self._passive.put_nowait(None)
+            self._passive = None
 
     async def send_turn(self, text: str) -> asyncio.Queue[dict[str, Any]]:
         if self._ws is None or self._ws.closed:
             raise RuntimeError("bridge is not connected")
+        if self._passive is not None:
+            # The user spoke over passively spoken text: that turn is over for the ear and the Harness alike.
+            self._end_passive()
+            await self.interrupt()
         self._turn = asyncio.Queue()
         await self._ws.send_json({"type": "turn", "text": text})
         return self._turn
@@ -227,6 +389,28 @@ class DshBridge:
     async def interrupt(self) -> None:
         if self._ws is not None and not self._ws.closed:
             await self._ws.send_json({"type": "interrupt"})
+
+    async def decide(self, allow: bool) -> str:
+        pending, self.pending_approval = self.pending_approval, None
+        if pending is None or self._ws is None or self._ws.closed:
+            return "There is nothing waiting for approval."
+        await self._ws.send_json({"type": "approval-decision", "id": pending["id"], "allow": allow})
+        return "Okay, going ahead." if allow else "Okay, denied."
+
+    async def request_permission(self, preset: str) -> str:
+        if self._ws is None or self._ws.closed:
+            raise RuntimeError("bridge is not connected")
+        self._command_reply = asyncio.get_running_loop().create_future()
+        await self._ws.send_json({"type": "permission", "preset": preset})
+        try:
+            reply = await asyncio.wait_for(self._command_reply, COMMAND_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            return "The harness did not answer."
+        finally:
+            self._command_reply = None
+        if reply.startswith("Switched to"):
+            self.permission = preset
+        return reply
 
     def end_turn(self) -> None:
         self._turn = None
@@ -282,10 +466,30 @@ class DshBridgeStream(llm.LLMStream):
                 return "\n".join(parts).strip()
         return ""
 
+    def _reply(self, request_id: str, text: str) -> None:
+        self._event_ch.send_nowait(llm.ChatChunk(
+            id=request_id, delta=llm.ChoiceDelta(role="assistant", content=text)))
+
     async def _run(self) -> None:
         text = self._last_user_text(self._chat_ctx)
         request_id = f"vesta-{uuid.uuid4().hex[:12]}"
         if not text:
+            return
+        # Spoken approvals and commands are settled here; the model never sees them.
+        if self._bridge.pending_approval is not None:
+            decision = classify_decision(text)
+            if decision is None:
+                self._reply(request_id, "Say yes to allow it, or no to deny it. You can also answer on screen.")
+            else:
+                self._reply(request_id, await self._bridge.decide(decision))
+            return
+        if is_stop(text):
+            await self._bridge.interrupt()
+            self._reply(request_id, "Okay, stopped.")
+            return
+        preset = permission_request(text)
+        if preset is not None:
+            self._reply(request_id, await self._bridge.request_permission(preset))
             return
         queue = await self._bridge.send_turn(text)
         spoken = SpokenTextFilter()
@@ -304,6 +508,13 @@ class DshBridgeStream(llm.LLMStream):
                     if tail:
                         self._event_ch.send_nowait(llm.ChatChunk(
                             id=request_id, delta=llm.ChoiceDelta(role="assistant", content=tail)))
+                    break
+                elif kind == "ask":
+                    # An approval question: speak it and close this stream so the
+                    # next utterance is judged as the answer. The turn's later
+                    # text arrives with no stream open and is spoken passively.
+                    tail = spoken.flush()
+                    self._reply(request_id, (tail + " " if tail else "") + str(frame.get("text", "")))
                     break
                 elif kind == "error":
                     raise RuntimeError(f"harness: {frame.get('message', 'turn failed')}")
@@ -378,6 +589,8 @@ async def entrypoint(ctx: JobContext) -> None:
         room=ctx.room,
         room_input_options=RoomInputOptions(close_on_disconnect=False),
     )
+    if bridge is not None:
+        bridge.attach(session)   # passive speech and approval questions need the running session
     greeting = BRIDGE_GREETING if bridge is not None else GREETING
     if greeting:
         # A fixed TTS line, NOT an LLM call: a system-only generate_reply 400s on LiteLLM.

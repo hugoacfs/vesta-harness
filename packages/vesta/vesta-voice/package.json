@@ -22,6 +22,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:^",
     "@deepseek-ai/dsh-credentials": "workspace:^",
+    "@deepseek-ai/dsh-scope": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
     "livekit-server-sdk": "^2.18.0",
     "ws": "8.21.0"
@@ -32,8 +33,10 @@
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-permission-presets": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^"
+    "@deepseek-ai/dsh-system-prompt": "workspace:^",
+    "@deepseek-ai/dsh-user-approval": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -41,8 +44,10 @@
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-permission-presets": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
+    "@deepseek-ai/dsh-user-approval": "workspace:^",
     "@types/ws": "8.18.1"
   }
 }

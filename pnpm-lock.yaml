@@ -9556,6 +9556,9 @@ importers:
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:^
         version: link:../../credentials/credentials
+      '@deepseek-ai/dsh-scope':
+        specifier: workspace:^
+        version: link:../../core/scope
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -9581,12 +9584,18 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-permission-presets':
+        specifier: workspace:^
+        version: link:../../interaction/permission-presets
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-user-approval':
+        specifier: workspace:^
+        version: link:../../interaction/user-approval
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1

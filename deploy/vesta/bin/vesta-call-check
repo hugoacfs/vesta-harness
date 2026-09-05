@@ -10,7 +10,11 @@ the LiveKit credentials):
 
   docker exec -i livekit-agent python - <sessionId> </path/inside/container.wav
 
-  vesta-call-check <sessionId> <wav path> [seconds to wait, default 40]
+  vesta-call-check <sessionId> <wav path>[,<wav path>...] [seconds to wait per reply, default 40] [settle seconds, default 0]
+
+Each WAV is one spoken turn, played after the previous reply ended; the settle
+wait at the end catches speech the agent produces without being asked (the
+continuation after a spoken approval).
 """
 import asyncio
 import sys
@@ -85,10 +89,10 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
     track = rtc.LocalAudioTrack.create_audio_track("microphone", source)
     await room.local_participant.publish_track(track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
     await asyncio.sleep(2.0)  # let the agent link + greet
-    rounds = int(sys.argv[4]) if len(sys.argv) > 4 else 1
-    for n in range(1, rounds + 1):
-        print(f"playing question (round {n})...", flush=True)
-        await play(source, wav_path)
+    settle_s = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
+    for n, path in enumerate(wav_path.split(","), 1):
+        print(f"playing {path} (round {n})...", flush=True)
+        await play(source, path)
         asked = time.monotonic()
         print("question played; waiting for the reply...", flush=True)
         first_speech = None
@@ -104,6 +108,9 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
         if first_speech is None:
             print("  no reply within the wait", flush=True)
         await asyncio.sleep(1.0)
+    if settle_s > 0:
+        print(f"settling {settle_s:.0f}s for unprompted speech...", flush=True)
+        await asyncio.sleep(settle_s)
     await room.disconnect()
     print(f"agent audio received: {heard['frames']} frames, {heard['ms'] / 1000:.1f}s")
     print("states:", " -> ".join(s for _, s in states) or "(none)")

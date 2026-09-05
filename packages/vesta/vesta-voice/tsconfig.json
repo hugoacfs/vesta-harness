@@ -18,6 +18,9 @@
       "path": "../../core/agent"
     },
     {
+      "path": "../../core/scope"
+    },
+    {
       "path": "../../core/session"
     },
     {
@@ -28,6 +31,12 @@
     },
     {
       "path": "../../host/webserver"
+    },
+    {
+      "path": "../../interaction/permission-presets"
+    },
+    {
+      "path": "../../interaction/user-approval"
     },
     {
       "path": "../../llm/llm"

@@ -1,4 +1,6 @@
 # One-shot CLI sibling of the `vesta` profile (same base + Vesta bundle, no web
-# server). Used for smoke checks from a shell; keep it empty unless a check
-# needs a local override.
-[]
+# server). The voice bridge is a web-host plugin (it injects webServer,
+# connection, and sessionController), so it stays disabled here; the client
+# rows have inert node halves and need no change.
+- id: vesta-voice
+  disabled: true
