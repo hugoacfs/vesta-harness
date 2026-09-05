@@ -1,7 +1,7 @@
 /**
  * Vesta voice surface, browser half: the mic button in the composer's right
- * control list and the call HUD in the composer overlay, both over one shared
- * call store written by the apply-world call controller.
+ * control list and the call HUD in the input dock above the composer, both
+ * over one shared call store written by the apply-world call controller.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -54,10 +54,12 @@ export function apply(ctx: ClientContext): void {
     },
   }, MicButton))
 
-  ctx.slots.inject('conversation.input.overlay', () => ctx.slots.register({
-    name: 'conversation.input.overlay',
+  // The dock is in-flow above the composer card (the goal bar lives there),
+  // so the HUD takes layout space instead of covering the transcript.
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
     id: 'vesta-voice-hud',
-    order: 2,
+    order: 5,
     store,
     locale: VOICE_NS,
     inject: (_sessionId, actions): CallHudInjected => {

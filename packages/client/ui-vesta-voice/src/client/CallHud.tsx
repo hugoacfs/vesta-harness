@@ -17,9 +17,9 @@ export interface CallHudInjected {
   setEmotion: (enabled: boolean) => Promise<void>
 }
 
-/** Full component props: runtime share + store share + locale seat + injected face. */
+/** Full component props: runtime share (dock owner values) + store share + locale seat + injected face. */
 export type CallHudProps =
-  PropsRuntime<'conversation.input.overlay'> & PropsStore<ReturnType<typeof createVoiceCallStore>>
+  PropsRuntime<'conversation.input.dock'> & PropsStore<ReturnType<typeof createVoiceCallStore>>
   & PropsLocale<'vesta.voice'> & CallHudInjected
 
 function stateKey(status: CallStatus, agentState: AgentState): VoiceKey {
@@ -35,9 +35,10 @@ function stateKey(status: CallStatus, agentState: AgentState): VoiceKey {
 }
 
 /**
- * Render the call HUD above the composer while this Session owns a call:
- * the ember orb driven by the agent's audio level, the state label, and the
- * mute, perception, and end controls.
+ * Render the call HUD in the input dock while this Session owns a call: the
+ * ember orb driven by the agent's audio level, the state label, and the mute,
+ * perception, and end controls. In-flow, so the transcript shrinks above it
+ * rather than being covered.
  * @param props - composed slot props.
  * @returns the HUD, or null when this Session has no call.
  */
