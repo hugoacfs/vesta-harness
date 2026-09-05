@@ -126,6 +126,17 @@ Ask it to "list the tool names starting with mcp__" to confirm the memory and se
 cd ~/code/vesta-harness && git pull --ff-only origin vesta && pnpm install --frozen-lockfile && pnpm run build && systemctl --user restart vesta-harness
 ```
 
+## Old sessions from rc.7
+
+The rc.7 store (`~/.dsh/sessions`, format v0) is a different home; the new harness never reads it in place. `deploy/vesta/bin/vesta-migrate-sessions.mjs` copies each session directory into `~/.vesta-harness/sessions/<workspace>/` (the v0 file stays as the retained generation) and opens it through the real JSONL provider, which publishes `session.v2.jsonl.zstd` beside it. Pre-migrating matters: the web process's session index migrates inside a search request otherwise, and a multi-second migration aborts the search ("Content search is temporarily unavailable") while a refused log hides every later session. Restart the harness afterwards so the boot-time index sees them.
+
+```bash
+node ~/code/vesta-harness/deploy/vesta/bin/vesta-migrate-sessions.mjs --dry-run ~/.dsh/sessions ~/.vesta-harness/sessions
+node ~/code/vesta-harness/deploy/vesta/bin/vesta-migrate-sessions.mjs ~/.dsh/sessions ~/.vesta-harness/sessions && systemctl --user restart vesta-harness
+```
+
+Forks (headers with `parentSession` + `seedLength`; rc.7 numbered their own events from seq 0) are skipped: the released v0 → v1 edge treats `seq < seedLength` as inherited, so they need their parent's prefix reconstructed first. They stay readable in the rc.7 install (`:8791` while it is up).
+
 ## Cutover (done 2026-09-05) and rollback
 
 Cutover was three reversible steps: `tailscale serve --bg --https=8790 http://127.0.0.1:3081` (re-points the existing port; nginx's `/dsh` redirect follows), `systemctl --user disable --now dsh-web`, and `tailscale serve --https=8791 off`. The old install keeps `~/.dsh` (its sessions are readable only there; the new home never sees them) and `~/code/dsh`.
