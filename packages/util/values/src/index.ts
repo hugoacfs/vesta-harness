@@ -14,7 +14,13 @@ export function assertNever(value: never, context?: string): never {
   throw new Error(`unreachable variant${context ? ` in ${context}` : ''}: ${rendered}`)
 }
 
-/** Whether a realm-owned intrinsic prototype is backed by its native constructor. */
+/**
+ * Whether a realm-owned intrinsic prototype is backed by its native constructor.
+ * Engines format native function source differently (V8 keeps it on one line,
+ * SpiderMonkey and JavaScriptCore break it across lines), so the check reads
+ * the shape, not one exact string; a user-defined constructor still fails it
+ * because its source is never `[native code]`.
+ */
 function hasIntrinsicConstructor(prototype: object, name: 'Array' | 'Object'): boolean {
   const descriptor = Object.getOwnPropertyDescriptor(prototype, 'constructor')
   const constructor: unknown = descriptor?.value
@@ -22,11 +28,17 @@ function hasIntrinsicConstructor(prototype: object, name: 'Array' | 'Object'): b
   try {
     return constructor.name === name
       && constructor.prototype === prototype
-      && Function.prototype.toString.call(constructor) === `function ${name}() { [native code] }`
+      && NATIVE_CONSTRUCTOR_SOURCE[name].test(Function.prototype.toString.call(constructor))
   } catch {
     return false
   }
 }
+
+/** Native constructor source per engine: `function Object() { [native code] }` with any whitespace layout. */
+const NATIVE_CONSTRUCTOR_SOURCE = {
+  Array: /^function Array\(\)\s*\{\s*\[native code\]\s*\}$/u,
+  Object: /^function Object\(\)\s*\{\s*\[native code\]\s*\}$/u,
+} as const
 
 /** Whether a candidate is one realm's intrinsic `Object.prototype`. */
 function isIntrinsicObjectPrototype(value: object): boolean {

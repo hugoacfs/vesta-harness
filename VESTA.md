@@ -41,3 +41,11 @@ pnpm install && pnpm run gen-tsconfig-paths && pnpm run build
 ```
 
 Record the merged upstream SHA in `VESTA-PLAN.md`.
+
+## Fork patches to upstream packages
+
+D2 says upstream packages are never edited; these are the deliberate exceptions, each with its retire condition. Re-apply or retire them on every upstream sync.
+
+| File | Why | Retire when |
+|---|---|---|
+| `packages/util/values/src/index.ts` (+ `tests/intrinsic-constructor.spec.ts`) | `hasIntrinsicConstructor` compared `Function.prototype.toString(Object)` with one exact V8 string; SpiderMonkey/JavaScriptCore render native source across lines, so in Firefox and Safari every plain object failed the lossless-JSON check and every assistant stream chunk was rejected (blank transcripts, "Assistant stream raw chunk must be a lossless JSON object"). The check now matches the native-source shape. | upstream ships an engine-independent check (report it upstream; `packages/core/tools/src/json-schema.ts`, `packages/extensions/cordis-host-runner/src/guard.ts`, and `packages/code-runtime/code-runtime-worker-thread/src/worker-json.ts` carry the same comparison but run only under Node/V8) |
