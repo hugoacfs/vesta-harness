@@ -132,8 +132,11 @@ The rc.7 store (`~/.dsh/sessions`, format v0) is a different home; the new harne
 
 ```bash
 node ~/code/vesta-harness/deploy/vesta/bin/vesta-migrate-sessions.mjs --dry-run ~/.dsh/sessions ~/.vesta-harness/sessions
-node ~/code/vesta-harness/deploy/vesta/bin/vesta-migrate-sessions.mjs ~/.dsh/sessions ~/.vesta-harness/sessions && systemctl --user restart vesta-harness
+node ~/code/vesta-harness/deploy/vesta/bin/vesta-migrate-sessions.mjs ~/.dsh/sessions ~/.vesta-harness/sessions
+systemctl --user stop vesta-harness && python3 ~/code/vesta-harness/deploy/vesta/bin/vesta-attach-sessions.py && systemctl --user start vesta-harness
 ```
+
+The attach step puts the migrated sessions into the dsh-chat sidebar group (otherwise they sit under "Ungrouped"). Titles appear once each session has been opened once (the list reads the projection cache only); open each row once, or let them fill in as you click.
 
 Forks (headers with `parentSession` + `seedLength`; rc.7 numbered their own events from seq 0) are skipped: the released v0 → v1 edge treats `seq < seedLength` as inherited, so they need their parent's prefix reconstructed first. They stay readable in the rc.7 install (`:8791` while it is up).
 
