@@ -2,7 +2,7 @@
 
 ## Summary
 
-`dsh-vesta-voice` makes a LiveKit voice call a modality of an ordinary Session. The browser asks `GET /api/vesta/voice/token?sessionId=…` for a room token (room `dsh-<sessionId>`), joins the LiveKit SFU, and the Vesta agent job that picks up the room dials this plugin's upgrade route (`/vesta/voice/bridge`, bearer = the LiveKit API secret, `X-Vesta-Room` = the room). The plugin resolves or resumes the Session's Agent and binds the socket: each finished utterance is submitted through `ctx.sessionController.prompt` (queued when the Agent is idle, steering when it is running), assistant `text-delta` chunks from `agent/assistant-stream` are relayed as `speak` frames, `tool/call` and `turn/end` session events as `status` and `done`, and a barge-in `interrupt` cancels the active turn while keeping the inbox. While a room is bound, a spoken-mode prompt section is registered on the Agent's own scope and unwinds when the socket closes. `GET/POST /api/vesta/voice/emotion` proxies the STT sidecar's perception flag. The package is private to the Vesta fork.
+`dsh-vesta-voice` makes a LiveKit voice call a modality of an ordinary Session. The browser asks `GET /api/vesta/voice/token?sessionId=…` for a room token (room `dsh-<sessionId>`), joins the LiveKit SFU, and the Vesta agent job that picks up the room dials this plugin's upgrade route (`/vesta/voice/bridge`, bearer = the LiveKit API secret, `X-Vesta-Room` = the room). The plugin resolves or resumes the Session's Agent and binds the socket: each finished utterance is submitted through `ctx.sessionController.prompt` (queued when the Agent is idle, steering when it is running), assistant `text-delta` chunks from `agent/assistant-stream` are relayed as `speak` frames, `tool/call` and `turn/end` session events as `status` and `done`, and a barge-in `interrupt` cancels the active turn while keeping the inbox. Every spoken turn is preceded by a short injected note (`VOICE_TURN_NOTE`, source `vesta-voice`) telling the model the message came by voice and how to answer for the ear; the note rides the same step as the utterance, so the request prefix stays cache-stable across call start and end. While a room is bound the Session's reasoning effort is switched to `off` through `sessionController.selectModel` and restored on unbind (a provider whose model declares no `off` effort keeps its selection). `GET/POST /api/vesta/voice/emotion` proxies the STT sidecar's perception flag. The package is private to the Vesta fork.
 
 ## Configuration
 
@@ -17,11 +17,11 @@
 
 ## Model Experience
 
-While a room is bound, the Agent's prompt carries the spoken-mode section (`VOICE_SECTION`, order 10): short spoken sentences, no markdown in prose, fenced code for on-screen material, perception notes never read aloud. Spoken turns are ordinary `user/message` events with a `user-rpc` source; nothing else reaches the model.
+Each spoken turn adds one injected user-role context (`VOICE_TURN_NOTE`, ~90 words): short spoken sentences, no markdown in prose, fenced code for on-screen material, perception notes never read aloud. The utterance itself is an ordinary `user/message` with a `user-rpc` source. While a call is bound the Session runs with reasoning effort `off`, so voice replies skip the thinking phase; typed turns after the call return to the previous effort.
 
 #### KV Cache effect
 
-Binding or unbinding a room changes the assembled system prompt of that Agent, so the request prefix changes at the next step of that Session only.
+The system prompt is untouched by a call; the per-turn note appends to history, and the reasoning switch changes only request parameters, so the cached prefix survives call start and end.
 
 ## Known Limitations and Deferred Work
 
