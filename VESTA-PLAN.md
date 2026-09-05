@@ -19,11 +19,11 @@ You open any session in Vesta Harness, press the mic, and talk. What you say lan
 
 ```
 Browser (Vesta Harness UI) ──mic──▶ LiveKit SFU (:8481) ──▶ livekit-agent (Python: VAD/turn, SenseVoice STT+emotion, Kyutai TTS)  [3060 only]
-        ▲  fetch /api/vesta/voice/token                                        │  WS bridge, loopback 127.0.0.1:8490
-        │                                                                      ▼
+        ▲  fetch /api/vesta/voice/token                                        │  each room's job dials ws://127.0.0.1:3081/vesta/voice/bridge
+        │                                                                      ▼  (agent on host networking; bearer = LiveKit secret)
 Vesta Harness host  `dsh --profile vesta`  (127.0.0.1:3081, serve :8791 → later :8790)
   ├─ dsh-vesta-voice (host): room ↔ session binding, submits the transcript into the session,
-  │    streams assistant text back to be spoken, relays approvals, "spoken mode" prompt section
+  │    streams assistant text back to be spoken, relays tool status, "spoken mode" prompt section
   ├─ dsh-client-ui-vesta-voice: mic button + call HUD (orb, state, mute, hide-emotions, end)
   ├─ dsh-client-ui-vesta-theme / -brand: ember tokens, fonts, ambient ground, Vesta mark, hero orb
   └─ everything else is stock DSH: Qwen via LiteLLM, tools, presets, permission tiers, sessions
