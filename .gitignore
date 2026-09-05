@@ -41,3 +41,6 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# Python bytecode anywhere (deploy/ and services/ carry Python too)
+__pycache__/
