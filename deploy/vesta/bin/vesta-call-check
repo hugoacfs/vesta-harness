@@ -53,8 +53,8 @@ async def play(source: rtc.AudioSource, path: str) -> None:
 
 async def main(session_id: str, wav_path: str, wait_s: float) -> int:
     room_name = f"{PREFIX}{session_id}"
-    with wave.open(wav_path, "rb") as wav:
-        rate, channels = wav.getframerate(), wav.getnchannels()
+    with wave.open(wav_path.split(",")[0], "rb") as wav:
+        rate, channels = wav.getframerate(), wav.getnchannels()   # every WAV must share this format
     room = rtc.Room()
     states: list[tuple[float, str]] = []
     heard = {"frames": 0, "ms": 0.0}

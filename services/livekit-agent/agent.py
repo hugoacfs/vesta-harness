@@ -230,7 +230,8 @@ def approval_question(tool: str, reason: str | None) -> str:
     if m:
         mode = _MODE_SPOKEN.get(m.group(1), m.group(1).replace("-", " "))
         why = m.group(2).strip().rstrip(".")
-        return f"{name} wants {mode}{', to ' + why[0].lower() + why[1:] if why else ''}. Allow it?"
+        # The justification is the model's own sentence; keep it whole rather than splicing it.
+        return f"{name} wants {mode}. {why[0].upper() + why[1:] + '. ' if why else ''}Allow it?"
     if reason:
         return f"{name} needs approval: {reason.strip().rstrip('.')}. Allow it?"
     return f"{name} needs your approval. Allow it?"

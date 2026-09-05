@@ -103,11 +103,13 @@ A permission utterance needs a verb (switch, change, set, go, put, use, give…)
 
 When a tool call needs approval (sandbox escalation in `read-only` / `workspace-write`), the assistant asks aloud ("The bash tool wants workspace write access, to create the notes file. Allow it?") and the on-screen card appears too. Answer with "yes" / "no" (or click); the first answer wins, the card closes on a spoken answer, and the turn continues with the assistant's follow-up spoken unprompted. Without the Landlock binary (see Prerequisites) the non-escalated commands in those modes fail closed, so the model escalates more often; that is expected until `musl-tools` is installed.
 
-Scripted check from the agent container (WAVs made with the TTS sidecar; `settle` catches the unprompted continuation):
+Scripted check from the agent container (WAVs made with the TTS sidecar; `settle` catches the unprompted continuation). Session ids carry the `session-` prefix (directory name under `$DSH_HOME/sessions/<workspace>/`), so the room is `dsh-session-<uuid>`; a bare uuid answers `404` at the bridge:
 
 ```bash
-docker cp ~/code/vesta-harness/deploy/vesta/bin/vesta-call-check livekit-agent:/tmp/call-check.py && docker exec livekit-agent python /tmp/call-check.py <sessionId> /tmp/safe.wav,/tmp/mkfile.wav,/tmp/yes.wav 40 30
+docker cp ~/code/vesta-harness/deploy/vesta/bin/vesta-call-check livekit-agent:/tmp/call-check.py && docker exec livekit-agent python -u /tmp/call-check.py session-<uuid> /tmp/safe.wav,/tmp/mkfile.wav,/tmp/yes.wav 75 45
 ```
+
+Make the WAVs with the TTS sidecar, e.g. `curl -s -o /tmp/yes.wav http://127.0.0.1:8010/v1/audio/speech -H 'Content-Type: application/json' -d '{"model":"kyutai/tts-1.6b-en_fr","input":"Yes, go ahead.","voice":"expresso/ex03-ex01_calm_001_channel1_1143s.wav","response_format":"wav"}'` and `docker cp` them into the container. Plugin logger lines do not reach the journal (only the startup URL does); use the agent container's log and the session log for evidence.
 
 ## CLI smoke check (no browser)
 
