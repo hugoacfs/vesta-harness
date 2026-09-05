@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""vesta-bridge-check — exercise the Harness voice bridge without audio.
+
+Connects to the bridge exactly like a LiveKit agent job would (bearer = the
+LiveKit API secret from the livekit-voice .env, X-Vesta-Room = dsh-<session>),
+sends one spoken turn, and prints the frames that come back until `done`.
+
+  vesta-bridge-check <sessionId> [text]
+"""
+import asyncio
+import json
+import os
+import sys
+
+import aiohttp
+
+BRIDGE = os.environ.get("DSH_BRIDGE_URL", "ws://127.0.0.1:3081/vesta/voice/bridge")
+ENV = os.environ.get("LIVEKIT_ENV", "/srv/ai/compose/livekit-voice/.env")
+PREFIX = os.environ.get("DSH_ROOM_PREFIX", "dsh-")
+
+
+def secret() -> str:
+    """The bearer: the process environment (inside the agent container) or the stack's .env."""
+    from_env = os.environ.get("LIVEKIT_API_SECRET")
+    if from_env:
+        return from_env
+    for line in open(ENV, encoding="utf-8"):
+        if line.startswith("LIVEKIT_API_SECRET="):
+            return line.rstrip("\n").split("=", 1)[1]
+    raise SystemExit(f"LIVEKIT_API_SECRET not found in {ENV}")
+
+
+async def main(session_id: str, text: str) -> int:
+    async with aiohttp.ClientSession() as http:
+        async with http.ws_connect(
+            BRIDGE,
+            headers={"Authorization": f"Bearer {secret()}", "X-Vesta-Room": f"{PREFIX}{session_id}"},
+            heartbeat=20.0,
+        ) as ws:
+            ready = await asyncio.wait_for(ws.receive_json(), 10)
+            print("<-", ready)
+            if ready.get("type") != "ready":
+                return 1
+            print("->", {"type": "turn", "text": text})
+            await ws.send_json({"type": "turn", "text": text})
+            spoken: list[str] = []
+            async for msg in ws:
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    break
+                frame = json.loads(msg.data)
+                kind = frame.get("type")
+                if kind == "speak":
+                    spoken.append(frame.get("text", ""))
+                    continue
+                print("<-", frame)
+                if kind in ("done", "error"):
+                    break
+            print("spoken:", repr("".join(spoken)))
+            return 0 if spoken else 2
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print(__doc__)
+        raise SystemExit(64)
+    sys.exit(asyncio.run(main(sys.argv[1], " ".join(sys.argv[2:]) or "Say hello in one short sentence.")))
