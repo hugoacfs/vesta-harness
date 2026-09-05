@@ -1,10 +1,10 @@
 /**
  * Vesta voice bridge, host plugin. Three contributions: the LiveKit room-token
  * and perception-toggle Fetch routes the browser calls, the WebSocket upgrade
- * route each LiveKit agent job dials to bind its room to one Session, and the
- * spoken-mode prompt section that covers a bound Session's Agent while the
- * call lasts. The voice models themselves run in the LiveKit stack; this
- * plugin never touches audio.
+ * route each LiveKit agent job dials to bind its room to one Session, a
+ * spoken-mode note injected with every spoken turn, and reasoning switched
+ * off for the Session while a call is bound. The voice models themselves run
+ * in the LiveKit stack; this plugin never touches audio.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -13,7 +13,7 @@ import { VoiceBridge } from './bridge.ts'
 import { registerVoiceRoutes } from './routes.ts'
 
 export { EMOTION_PATH, TOKEN_PATH } from './routes.ts'
-export { VOICE_SECTION, VOICE_SECTION_NAME, VOICE_SECTION_ORDER } from './prompt.ts'
+export { VOICE_SECTION, VOICE_SOURCE_PLUGIN, VOICE_TURN_NOTE } from './prompt.ts'
 export type { AgentToHost, HostToAgent } from './types.ts'
 
 export const name = 'vesta-voice'

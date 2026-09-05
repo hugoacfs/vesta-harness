@@ -14,6 +14,7 @@ import type { Duplex } from 'node:stream'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -22,7 +23,7 @@ import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { Config } from './index.ts'
-import { VOICE_SECTION, VOICE_SECTION_NAME, VOICE_SECTION_ORDER } from './prompt.ts'
+import { VOICE_SOURCE_PLUGIN, VOICE_TURN_NOTE } from './prompt.ts'
 import type { AgentToHost, HostToAgent } from './types.ts'
 
 /** One bound room: the socket, the Agent it drives, and what unwinds on close. */
@@ -31,6 +32,8 @@ interface Binding {
   readonly agent: Agent
   readonly socket: WebSocket
   readonly disposers: (() => void)[]
+  /** The Session's reasoning effort before the call switched it off, restored on unbind. */
+  restoreReasoning: { provider: string; model: string; reasoningEffort: string | undefined } | undefined
 }
 
 const BEARER = /^Bearer\s+(\S+)$/u
@@ -110,16 +113,12 @@ export class VoiceBridge {
   }
 
   private bind(socket: WebSocket, sessionId: SessionId, agent: Agent): void {
-    const binding: Binding = { sessionId, agent, socket, disposers: [] }
+    const binding: Binding = { sessionId, agent, socket, disposers: [], restoreReasoning: undefined }
     this.bindings.add(binding)
     const send = (frame: HostToAgent): void => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(frame))
     }
-    binding.disposers.push(agent.ctx.systemPrompt.section({
-      name: VOICE_SECTION_NAME,
-      order: VOICE_SECTION_ORDER,
-      text: VOICE_SECTION,
-    }))
+    void this.quietReasoning(binding)
     binding.disposers.push(agent.ctx.on('agent/assistant-stream', ({ agent: owner, frame }) => {
       if (owner !== agent || frame.type !== 'chunk' || frame.chunk.type !== 'text-delta') return
       send({ type: 'speak', text: frame.chunk.text })
@@ -160,6 +159,7 @@ export class VoiceBridge {
 
   private unbind(binding: Binding, code?: number, reason?: string): void {
     if (!this.bindings.delete(binding)) return
+    void this.restoreReasoning(binding)
     for (const dispose of binding.disposers.splice(0)) {
       try {
         dispose()
@@ -177,6 +177,12 @@ export class VoiceBridge {
     if (trimmed.length === 0) return
     const mode = binding.agent.status === 'running' ? 'steer' : 'queue'
     try {
+      // The spoken-mode note rides the same step as the utterance: injected
+      // context waits in the inbox until the prompt below wakes the driver.
+      binding.agent.inject(createUserMessage({
+        content: [{ type: 'text', text: VOICE_TURN_NOTE }],
+        source: { kind: 'plugin', plugin: VOICE_SOURCE_PLUGIN },
+      }))
       await this.ctx.sessionController.prompt({
         requestId: brandString<SessionRequestId>(randomUUID()),
         sessionId: binding.sessionId,
@@ -187,6 +193,41 @@ export class VoiceBridge {
       const message = error instanceof Error ? error.message : String(error)
       this.ctx.logger.warn(`vesta-voice: prompt refused for ${String(binding.sessionId)}: ${message}`)
       send({ type: 'error', message })
+    }
+  }
+
+  /**
+   * Switch the Session's reasoning effort off while the call lasts: a spoken
+   * reply should not wait for a thinking phase. A model that declares no
+   * `off` effort keeps its current selection (logged, not fatal).
+   */
+  private async quietReasoning(binding: Binding): Promise<void> {
+    const { provider, model, reasoningEffort } = binding.agent.options
+    if (provider === undefined || model === undefined || reasoningEffort === 'off') return
+    try {
+      await this.ctx.sessionController.selectModel({
+        sessionId: binding.sessionId, provider, model, reasoningEffort: 'off',
+      })
+      binding.restoreReasoning = { provider, model, reasoningEffort }
+    } catch (error) {
+      this.ctx.logger.info(`vesta-voice: reasoning stays on for ${String(binding.sessionId)}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /** Put the reasoning effort back the way the call found it. */
+  private async restoreReasoning(binding: Binding): Promise<void> {
+    const previous = binding.restoreReasoning
+    if (previous === undefined) return
+    binding.restoreReasoning = undefined
+    try {
+      await this.ctx.sessionController.selectModel({
+        sessionId: binding.sessionId,
+        provider: previous.provider,
+        model: previous.model,
+        ...(previous.reasoningEffort === undefined ? {} : { reasoningEffort: previous.reasoningEffort }),
+      })
+    } catch (error) {
+      this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
     }
   }
 

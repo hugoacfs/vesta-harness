@@ -1,13 +1,23 @@
-/** Registration name of the spoken-mode section on a bound Agent. */
-export const VOICE_SECTION_NAME = 'vesta-voice'
-
-/** Placement right after the deployment persona (order 0) and before the plan and tool sections. */
-export const VOICE_SECTION_ORDER = 10
+/** Source plugin name stamped on the per-turn spoken-mode note. */
+export const VOICE_SOURCE_PLUGIN = 'vesta-voice'
 
 /**
- * The spoken-mode prompt section. Registered on the Agent's own scope while a
- * voice call is bound to its Session and removed when the call ends, so typed
- * turns in the same Session return to the ordinary prompt.
+ * The per-turn spoken-mode note. Injected as model-facing context right
+ * before each spoken turn enters the Session, so the request prefix (system
+ * prompt + history) stays cache-stable across call start and end; typed turns
+ * carry no note and read as ordinary chat.
+ */
+export const VOICE_TURN_NOTE = [
+  'Spoken turn: the user said the next message by voice and will hear your reply read aloud.',
+  'Answer in one to three short spoken sentences unless asked for detail; no markdown, lists, or URLs in prose.',
+  'Put code, commands, or long output in a fenced code block (shown on screen, not read aloud) and say so in a few words.',
+  'Before long tool work, say in one sentence what you will do, then do it. A bracketed [tone: …] note describes how the user sounded; use it, never read it aloud.',
+].join(' ')
+
+/**
+ * The full spoken-mode guidance, kept for deployments that prefer a prompt
+ * section over the per-turn note (a section changes the request prefix while
+ * a call is bound, which costs a full prompt prefill at call start).
  */
 export const VOICE_SECTION = [
   'Voice call in progress. The user is talking to you through a live voice call and hears your replies read aloud by text-to-speech; everything you write also appears on their screen.',
