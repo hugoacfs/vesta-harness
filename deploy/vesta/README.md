@@ -1,6 +1,6 @@
 # Vesta Harness on vesta — ops runbook
 
-Everything here runs as `hugo` on vesta from the source checkout `~/code/vesta-harness` (branch `vesta`), with a **fresh Harness home** `~/.vesta-harness`. The rc.7 install (`~/code/dsh`, `~/.dsh`, unit `dsh-web`, serve `:8790`) is left untouched as the rollback until cutover.
+Everything here runs as `hugo` on vesta from the source checkout `~/code/vesta-harness` (branch `vesta`), with a **fresh Harness home** `~/.vesta-harness`. Since the cutover (2026-09-05) `https://vesta.tail22b555.ts.net:8790` serves this harness; the rc.7 install (`~/code/dsh`, `~/.dsh`, unit `dsh-web`, stopped and disabled) stays installed as the rollback and still owns the pre-cutover sessions.
 
 ## Layout
 
@@ -9,7 +9,7 @@ Everything here runs as `hugo` on vesta from the source checkout `~/code/vesta-h
 | Source checkout | `~/code/vesta-harness` (origin `hugoacfs/vesta-harness`, upstream `deepseek-ai/deepseek-harness`) |
 | Harness home | `~/.vesta-harness` — `profiles/vesta/`, `settings.yaml`, `.credentials.yaml` (chmod 600), `.agent-presets/vesta-orch/` |
 | Service | systemd `--user` unit `vesta-harness` → `node apps/cli/lib/bin.js --profile vesta --host 127.0.0.1 --port 3081 --trusted-host vesta.tail22b555.ts.net --no-open` |
-| Tailnet URL | `https://vesta.tail22b555.ts.net:8791` (tailscale serve → `127.0.0.1:3081`); `:8790` stays on the old install until cutover |
+| Tailnet URL | `https://vesta.tail22b555.ts.net:8790` (tailscale serve → `127.0.0.1:3081`); nginx `/dsh` redirects there; `:8791` was the side-by-side port before cutover and is off |
 | Templates | this directory: `profiles/vesta/*`, `settings.yaml`, `agent-presets/vesta-orch/*`, `vesta-harness.service` |
 
 ## Prerequisites (once)
@@ -51,7 +51,7 @@ cd ~/code/vesta-harness && DSH_HOME=~/.vesta-harness node apps/cli/lib/bin.js --
 install -m 644 ~/code/vesta-harness/deploy/vesta/vesta-harness.service ~/.config/systemd/user/vesta-harness.service
 systemctl --user daemon-reload && systemctl --user enable --now vesta-harness
 systemctl --user status vesta-harness --no-pager
-tailscale serve --bg --https=8791 http://127.0.0.1:3081
+tailscale serve --bg --https=8790 http://127.0.0.1:3081
 ```
 
 ## First visit from a browser
@@ -60,19 +60,18 @@ tailscale serve --bg --https=8791 http://127.0.0.1:3081
 
 ```bash
 install -m 755 ~/code/vesta-harness/deploy/vesta/bin/vesta-url ~/.local/bin/vesta-url
-vesta-url    # prints https://vesta.tail22b555.ts.net:8791/?token=… for the running process
+vesta-url    # prints https://vesta.tail22b555.ts.net:8790/?token=… for the running process
 ```
 
 ## Verify
 
 - `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3081/` → `200`
-- `https://vesta.tail22b555.ts.net:8791` shows the Vesta brand (ember orb, "Vesta Harness") and the ember theme.
+- `https://vesta.tail22b555.ts.net:8790` shows the Vesta brand (ember orb, "Vesta Harness") and the ember theme.
 - A new session answers through Qwen (`default`); `mcp__memory__*` / `mcp__search__*` appear in the tool list; the hero shows `vesta-orch`; `/permission` lists `read-only`, `workspace-write`, `danger-full-access`.
-- `:8790` still serves the old install.
 
 ## Voice (Phase A)
 
-The LiveKit stack stays in `/srv/ai/compose/livekit-voice`; its compose file is versioned here as `livekit-voice.docker-compose.yml` and the agent worker source is `services/livekit-agent` in this checkout (the compose `build:` points at it). The Harness needs the LiveKit credentials as references:
+The LiveKit stack stays in `/srv/ai/compose/livekit-voice`; its compose file is versioned here as `livekit-voice.docker-compose.yml`, and both voice services build from this checkout: the agent worker `services/livekit-agent` and the SenseVoice STT sidecar `services/livekit-media`. The standalone voice UI (`livekit-webui`, `:8480`) and its frontend are retired behind the compose profile `legacy` (stopped, image kept); `docker compose --profile legacy up -d livekit-webui` plus `tailscale serve --bg --https=8480 http://127.0.0.1:3010` bring the old page back. The Harness needs the LiveKit credentials as references:
 
 ```bash
 python3 -c "env=dict(l.rstrip('\n').split('=',1) for l in open('/srv/ai/compose/livekit-voice/.env') if '=' in l and not l.startswith('#')); p='/home/hugo/.vesta-harness/.credentials.yaml'; t=open(p).read(); t=t if 'LIVEKIT_API_KEY' in t else t.replace('refs:\n','refs:\n  LIVEKIT_API_KEY: %s\n  LIVEKIT_API_SECRET: %s\n'%(env['LIVEKIT_API_KEY'],env['LIVEKIT_API_SECRET']),1); open(p,'w').write(t)"
@@ -127,6 +126,14 @@ Ask it to "list the tool names starting with mcp__" to confirm the memory and se
 cd ~/code/vesta-harness && git pull --ff-only origin vesta && pnpm install --frozen-lockfile && pnpm run build && systemctl --user restart vesta-harness
 ```
 
-## Rollback
+## Cutover (done 2026-09-05) and rollback
 
-`systemctl --user stop vesta-harness` — `:8790` never moved. After cutover (Phase C), `tailscale serve --bg --https=8790 http://127.0.0.1:3080` and `systemctl --user start dsh-web` restore the rc.7 install.
+Cutover was three reversible steps: `tailscale serve --bg --https=8790 http://127.0.0.1:3081` (re-points the existing port; nginx's `/dsh` redirect follows), `systemctl --user disable --now dsh-web`, and `tailscale serve --https=8791 off`. The old install keeps `~/.dsh` (its sessions are readable only there; the new home never sees them) and `~/code/dsh`.
+
+Rollback to rc.7:
+
+```bash
+systemctl --user enable --now dsh-web && tailscale serve --bg --https=8790 http://127.0.0.1:3080
+```
+
+The new harness keeps running on `127.0.0.1:3081` meanwhile; `tailscale serve --bg --https=8791 http://127.0.0.1:3081` exposes it side by side again.

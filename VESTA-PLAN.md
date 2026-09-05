@@ -9,7 +9,7 @@ Living document: agents working on this fork update the status table and the log
 | 0 | Fork online on vesta, styled, text-only: `vesta` profile, ember theme, Vesta brand, MCP rows; side-by-side on `:3081` / serve `:8791` | done 2026-09-05 (Landlock sandbox binary pending `musl-tools`) |
 | A | Voice into the session: host bridge plugin, mic + call HUD, Python agent bridge (feature-flagged) | done 2026-09-05 (user confirmations of barge-in / typed follow-up / tone toggle still open) |
 | B | Autonomy and approvals by voice | done 2026-09-05 (scripted verification; user confirmation pending) |
-| C | Cutover `:8790`, retire the standalone `:8480` voice UI, move voice service sources into `services/`, upstream sync drill | pending |
+| C | Cutover `:8790`, retire the standalone `:8480` voice UI, move voice service sources into `services/`, upstream sync drill | done 2026-09-05 |
 
 Upstream base: `deepseek-ai/deepseek-harness@d347e70` (`dsh-v0.1.3-alpha.1`), forked 2026-09-04.
 
@@ -61,14 +61,14 @@ Standing constraints: voice models run on the RTX 3060 only (`GPU-4c4e6e17-…`)
 
 ## Phase C — cutover and consolidation
 
-1. serve `:8790` → `127.0.0.1:3081`; old `dsh-web` stopped but installed.
-2. Retire the standalone `:8480` voice UI (stop `livekit-webui`, keep image/dir); `:8481` SFU stays.
-3. Move voice service sources (`agent/`, `media/`) under `services/`; point the compose build contexts there.
-4. Upstream sync drill.
+1. serve `:8790` → `127.0.0.1:3081`, `dsh-web` disabled (installed; `~/.dsh` untouched and still the only reader of the pre-cutover sessions), `:8791` off, nginx `/dsh` redirect unchanged (it targets `:8790`). ✅ 2026-09-05
+2. Standalone `:8480` voice UI retired: `livekit-webui` and `livekit-frontend` behind the compose profile `legacy` (containers stopped, images kept), serve `:8480` off; `:8481` SFU stays. ✅ 2026-09-05
+3. Voice service sources consolidated: `services/livekit-agent` (Phase A) and `services/livekit-media` (SenseVoice STT sidecar, moved from the compose dir) with the compose `build:` contexts pointing at the checkout; `/srv/ai/compose/livekit-voice/{PLAN,README}.md` carry a pointer here. ✅ 2026-09-05
+4. Upstream sync drill: `git fetch upstream` → `upstream/master` is still `d347e70` (`dsh-v0.1.3-alpha.1`, our base), `master --ff-only` and `vesta ← master` both "Already up to date"; the procedure in `VESTA.md` ran without conflicts because nothing new exists upstream yet. The first real sync will exercise the three known conflict points (aggregate tsconfig refs, `apps/cli/package.json`, `tsconfig.base.json` paths). ✅ 2026-09-05
 
 ## Rollback
 
-`:8790` keeps pointing at the untouched rc.7 `dsh-web` until Phase C; the `:8480/:8481` voice stack is unchanged until Phase C; the agent bridge is env-flagged. Nothing is deleted; `~/.dsh` is never written.
+rc.7: `systemctl --user enable --now dsh-web && tailscale serve --bg --https=8790 http://127.0.0.1:3080` (the new harness stays up on `:3081`). Standalone voice UI: `docker compose --profile legacy up -d livekit-webui` + `tailscale serve --bg --https=8480 http://127.0.0.1:3010`. The agent bridge is env-flagged (`DSH_BRIDGE_URL`). Nothing is deleted; `~/.dsh` is never written.
 
 ## Log
 
@@ -81,3 +81,4 @@ Standing constraints: voice models run on the RTX 3060 only (`GPU-4c4e6e17-…`)
 - 2026-09-05 — Empty-session report (a voice test session shows an empty transcript when opened; console: "Assistant stream raw chunk must be a lossless JSON object"). All four stored session logs on vesta pass `expandAssistantStream`, both voice sessions render in a fresh browser, and live and barge-in turns render; not reproducible so far. Most likely a stale client tab across the harness restarts of the day (hard reload). Left open: needs the session title and, if it persists after a reload, the "Session log" ZIP from the session menu.
 - 2026-09-05 — Phase B written: `types.ts` wire frames (`approval`, `approval-done`, `say`, `approval-decision`, `permission`, `ready.permission`), `bridge.ts` answerer + permission switch (`dsh-user-approval`, `dsh-permission-presets`, `dsh-scope` added as deps/refs), `agent.py` classifiers, passive speech and command handling (`DSH_COMMAND_TIMEOUT_S`), `vesta-call-check` plays a list of WAVs and settles. Approvals in stock DSH arise from sandbox escalation (`sandbox_permissions`) and hook asks only, so `danger-full-access` sessions never ask; tests run in `read-only`.
 - 2026-09-05 — Phase B deployed and verified (see the Phase B verify line). Lesson: session ids are `session-<uuid>`, so bridge rooms are `dsh-session-<uuid>`; two probes with bare uuids answered 404 ("not found" from `sessionQuery.observeSession`) and cost an hour, and the headless-profile sessions in the `vesta-harness` workspace are resumable too once named correctly. Plugin logger output does not reach the journal; the runbook now says so. The spoken approval question keeps the model's justification as its own sentence.
+- 2026-09-05 — Phase C: STT sidecar sources moved into `services/livekit-media`, compose contexts point at the checkout, standalone UI + frontend behind `profiles: [legacy]`, `vesta-url` prints `:8790`; runbook rewritten for the cutover and rollback; sync drill a no-op (upstream unchanged since the fork). Deployed: see the next line.

@@ -17,4 +17,4 @@ if [ -z "$tok" ]; then
   echo "vesta-url: no startup URL in the journal for pid $pid yet; retry in a few seconds" >&2
   exit 1
 fi
-echo "https://vesta.tail22b555.ts.net:8791/?token=$tok"
+echo "https://vesta.tail22b555.ts.net:8790/?token=$tok"

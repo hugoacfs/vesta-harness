@@ -30,7 +30,7 @@ services:
   # perception flag at /config. Published on loopback for the host-network agent
   # and for the Harness's "hide emotions" proxy.
   livekit-media:
-    build: ./media
+    build: /home/hugo/code/vesta-harness/services/livekit-media   # source of truth: the vesta-harness checkout
     image: livekit-media:latest
     container_name: livekit-media
     restart: unless-stopped
@@ -80,6 +80,7 @@ services:
 
   # Next.js UI (LiveKit agent-starter-react, rebranded). Stopped; kept as a rollback.
   livekit-frontend:
+    profiles: [legacy]   # retired 2026-09-05 (Phase C): the Harness UI carries voice now; `docker compose --profile legacy up -d livekit-frontend` brings it back
     build: ./frontend
     image: livekit-frontend:latest
     container_name: livekit-frontend
@@ -97,6 +98,7 @@ services:
   # Standalone Vesta-styled voice UI (FastAPI: serves the UI + mints room tokens).
   # Retired in Phase C once the Harness call surface is approved.
   livekit-webui:
+    profiles: [legacy]   # retired 2026-09-05 (Phase C): the Harness UI carries voice now; `docker compose --profile legacy up -d livekit-webui` brings it back
     build: ./webui
     image: livekit-webui:latest
     container_name: livekit-webui
