@@ -24,7 +24,9 @@ llm-pi-ai:
         - id: default
           name: Qwen 27B
           contextWindow: 114688
-          maxTokens: 16384
+          # 32k output: thinking (capped below) plus a long answer must both fit;
+          # vLLM allows 150k in+out, LiteLLM's 16,384 max_output_tokens is metadata.
+          maxTokens: 32768
           reasoningEfforts:
             off: null
             xhigh: xhigh
