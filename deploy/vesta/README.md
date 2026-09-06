@@ -182,6 +182,36 @@ The attach step puts the migrated sessions into the dsh-chat sidebar group (othe
 
 Forks (headers with `parentSession` + `seedLength`) migrate too, at ~30 s each for a few hundred thousand inherited events, which is why the script pre-migrates instead of leaving it to the web process. rc.7's subagent child sessions (`origin: subagent`, bare-uuid directories) are refused by the current codec ("subagent/descriptor uses unsupported descriptor version 2"); the script removes the failed copy again so the index stays healthy. They never appear in the sidebar; only the parents' subagent detail views lose them. rc.7 had 11 sessions archived (`~/.dsh/storages/workspace.json` → `archivedSessionIds`); the migration leaves everything visible.
 
+## Staging instance (bleeding edge beside production)
+
+A second Harness runs from its own checkout and home so new work can be tried without touching `:8790`:
+
+| | production | staging |
+|---|---|---|
+| checkout | `~/code/vesta-harness` (branch `vesta`) | `~/code/vesta-harness-staging` (branch `staging`) |
+| home | `~/.vesta-harness` | `~/.vesta-harness-staging` |
+| unit / port | `vesta-harness`, 3081 → tailnet `:8790` | `vesta-harness-staging`, 3082 → tailnet `:8792` |
+| voice rooms | `dsh-session-<uuid>` | `dshs-session-<uuid>` (home patch `roomPrefix: dshs-`) |
+| worker | `livekit-agent` (accepts `dsh-*`, health `127.0.0.1:8081`) | `livekit-agent-staging` (compose profile `staging`, accepts `dshs-*`, health `127.0.0.1:8082`) |
+
+Shared: the LiveKit SFU, `moshi-server`, the media sidecar (its emotion flag is global), LiteLLM, the 3060. The two workers are unnamed and on automatic dispatch; the SFU offers each new room to a worker and a worker whose prefix does not match rejects it (`declining room …` in its log), after which the SFU offers it to the other. Dispatch by a named agent in the token (`vesta-voice` `agentName`, `AGENT_NAME`) is implemented but off: livekit-server 1.13 on vesta ignored the claim and only ever looked for an unnamed worker.
+
+Set-up (done 2026-09-06):
+
+```bash
+git clone git@github.com:hugoacfs/vesta-harness.git ~/code/vesta-harness-staging && cd ~/code/vesta-harness-staging && git checkout -b staging origin/vesta && pnpm install --frozen-lockfile && pnpm run build
+H=~/.vesta-harness-staging; mkdir -p $H/profiles/vesta $H/.agent-presets $H/storages $H/sessions
+cp ~/.vesta-harness/settings.yaml ~/.vesta-harness/.credentials.yaml $H/ && chmod 600 $H/.credentials.yaml $H/settings.yaml
+cp -r ~/.vesta-harness/.agent-presets/. $H/.agent-presets/ && cp ~/.vesta-harness/profiles/vesta/{package.json,cordis.yml,pnpm-workspace.yaml} $H/profiles/vesta/ && mkdir -p $H/profiles/vesta/node_modules
+cp ~/code/vesta-harness-staging/deploy/vesta/staging-cordis.patch.yml $H/profiles/vesta/cordis.patch.yml
+cp ~/code/vesta-harness-staging/deploy/vesta/vesta-harness-staging.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now vesta-harness-staging
+tailscale serve --bg --https=8792 http://127.0.0.1:3082
+cd /srv/ai/compose/livekit-voice && docker compose --profile staging up -d --build livekit-agent-staging
+VESTA_UNIT=vesta-harness-staging VESTA_PORT=8792 vesta-url      # first-visit URL for the staging instance
+```
+
+Update staging: `cd ~/code/vesta-harness-staging && git pull origin staging && pnpm install --frozen-lockfile && pnpm run build && systemctl --user restart vesta-harness-staging`, plus `docker compose --profile staging up -d --build livekit-agent-staging` when `services/livekit-agent` changed. Scripted check against staging: `ROOM_PREFIX=dshs- docker exec livekit-agent-staging python /tmp/call-check.py <session-id> /tmp/p_hello.wav` (the staging harness's session id, created on `127.0.0.1:3082`). Promotion: merge `staging` into `vesta` and run the production update. Rollback: `systemctl --user disable --now vesta-harness-staging`, `tailscale serve --https=8792 off`, `docker compose --profile staging down` — production is never touched.
+
 ## Cutover (done 2026-09-05) and rollback
 
 Cutover was three reversible steps: `tailscale serve --bg --https=8790 http://127.0.0.1:3081` (re-points the existing port; nginx's `/dsh` redirect follows), `systemctl --user disable --now dsh-web`, and `tailscale serve --https=8791 off`. The old install keeps `~/.dsh` (its sessions are readable only there; the new home never sees them) and `~/code/dsh`.
