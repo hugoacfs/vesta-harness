@@ -301,6 +301,8 @@ LEAD_IN_SAMPLES = int(float(os.environ.get("KYUTAI_LEAD_IN_S", "1.5")) * SAMPLE_
 # The final transcript waits at most this long for the second pass (it usually finishes
 # inside the pause grace, because it starts when the pause is predicted).
 REFINE_TIMEOUT_S = float(os.environ.get("KYUTAI_REFINE_TIMEOUT_S", "1.5"))
+# Late words arrive in bursts: re-run the pass this long after the last of them.
+REFINE_DEBOUNCE_S = float(os.environ.get("KYUTAI_REFINE_DEBOUNCE_S", "0.25"))
 
 
 def _plausible(refined: str | None, streamed: str) -> bool:
@@ -327,6 +329,7 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         self._lead_samples = 0
         self._spec: asyncio.Task[tuple[str | None, str | None]] | None = None   # second pass started at the pause
         self._spec_words = 0                 # how many words it covered
+        self._spec_timer: asyncio.TimerHandle | None = None   # debounce for late-word re-runs
         self._delivery: asyncio.Task[None] | None = None   # finals are delivered in order
         self._input_done = False             # the framework closed the input: no reconnects after this
 
@@ -338,6 +341,16 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         audio = np.concatenate(self._audio) if self._audio else np.zeros(0, dtype=np.float32)
         return asyncio.get_running_loop().create_task(self._kyutai.refine(audio))
 
+    def _respeculate(self) -> None:
+        """Re-run the second pass over the utterance as it stands now (late words included)."""
+        self._spec_timer = None
+        if not self._words or self._pause_at is None:
+            return
+        if self._spec is not None:
+            self._spec.cancel()
+        self._spec = self._start_refine()
+        self._spec_words = len(self._words)
+
     def _finalize(self, reason: str) -> None:
         if not self._words:
             return
@@ -345,6 +358,9 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         words = len(self._words)
         started = self._utterance_start
         audio = np.concatenate(self._audio) if self._audio else np.zeros(0, dtype=np.float32)
+        if self._spec_timer is not None:
+            self._spec_timer.cancel()
+            self._spec_timer = None
         spec = self._spec if self._spec is not None and self._spec_words == words else None
         if self._spec is not None and spec is None:
             self._spec.cancel()   # words came after the pause: that pass is stale
@@ -478,13 +494,13 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                         self._last_word_at = time.monotonic()
                         self._emit(stt.SpeechEventType.INTERIM_TRANSCRIPT, " ".join(self._words))
                         if self._pause_at is not None and self._kyutai._refine_url:
-                            # A word after the pause (the model's emission lag): the pass started
-                            # at the pause is stale, and the grace restarts from this word, so a
-                            # fresh pass now still lands before the turn is finalized.
-                            if self._spec is not None:
-                                self._spec.cancel()
-                            self._spec = self._start_refine()
-                            self._spec_words = len(self._words)
+                            # Words after the pause (the model's emission lag) make the pass
+                            # started at the pause stale; they come in a burst, so wait for the
+                            # burst to end before re-running. The grace restarts from the last
+                            # word, so the fresh pass still lands before the turn is finalized.
+                            if self._spec_timer is not None:
+                                self._spec_timer.cancel()
+                            self._spec_timer = asyncio.get_running_loop().call_later(REFINE_DEBOUNCE_S, self._respeculate)
                     elif kind == "Step":
                         prs = msg.get("prs") or []
                         if self._words and self._pause_at is None and len(prs) > PAUSE_HEAD and prs[PAUSE_HEAD] > PAUSE_THRESHOLD:
