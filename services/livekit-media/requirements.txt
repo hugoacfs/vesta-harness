@@ -8,3 +8,4 @@ torchaudio
 modelscope
 requests>=2.31
 python-multipart>=0.0.9
+faster-whisper>=1.1

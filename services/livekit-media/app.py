@@ -3,18 +3,26 @@ livekit-media — SenseVoice STT sidecar (OpenAI-compatible) for the LiveKit age
 
 SenseVoice (FunAudioLLM/Alibaba) transcribes AND perceives the speaker's emotion +
 audio events (including laughter) in one fast model — so Vesta can hear *how* you
-sound and react, while Qwen-27B stays the brain. Replaces faster-whisper.
+sound and react, while Qwen-27B stays the brain.
 
     POST /v1/audio/transcriptions  (multipart file) -> {"text","emotion","events"}
+    POST /v1/audio/refine          (multipart file) -> {"text","note","emotion","events",...}
 
-The `text` field is the words plus, when notable, a compact bracketed note like
-" [tone: happy; laughing]" so the LLM (via the openai STT plugin, which only passes
-`text`) sees how the user sounded. The agent's system prompt tells Qwen to adapt to
-it and never read it aloud.
+The `text` field of /transcriptions is the words plus, when notable, a compact bracketed
+note like " [tone: happy; laughing]" so the LLM (via the openai STT plugin, which only
+passes `text`) sees how the user sounded. The agent's system prompt tells Qwen to adapt
+to it and never read it aloud.
+
+/refine is the second pass behind the streaming STT: the streaming model (Kyutai 1B) ends
+the turn and shows words as they come, and once the utterance is complete the same audio
+goes through Whisper (faster-whisper large-v3-turbo, int8_float16 on the 3060) for the
+text the brain actually receives, with SenseVoice run alongside for the tone note.
 """
+import asyncio
 import os
 import re
 import tempfile
+import time
 
 import soundfile as sf
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -36,6 +44,37 @@ except Exception as e:  # noqa: BLE001 — fall back to CPU so the service still
     _dev = "cpu"
 print("[media] ready.", flush=True)
 
+# Second-pass transcriber (see the module docstring). REFINE_MODEL= (empty) disables it.
+REFINE_MODEL = os.environ.get("REFINE_MODEL", "large-v3-turbo")
+REFINE_DEVICE = os.environ.get("REFINE_DEVICE", "cuda")
+REFINE_COMPUTE = os.environ.get("REFINE_COMPUTE", "int8_float16")
+REFINE_LANGUAGE = os.environ.get("REFINE_LANGUAGE", "en")
+# Whisper biases towards the vocabulary of its prompt: the names the caller actually uses.
+REFINE_PROMPT = os.environ.get("REFINE_PROMPT", "Vesta, Qwen, LiveKit, Kyutai, vLLM, LiteLLM, Docker, tailnet, harness, SearXNG.")
+_whisper = None
+_whisper_dev = None
+if REFINE_MODEL:
+    from faster_whisper import WhisperModel
+
+    try:
+        print("[media] loading whisper:", REFINE_MODEL, REFINE_DEVICE, REFINE_COMPUTE, flush=True)
+        _whisper = WhisperModel(REFINE_MODEL, device=REFINE_DEVICE, compute_type=REFINE_COMPUTE)
+        _whisper_dev = REFINE_DEVICE
+    except Exception as e:  # noqa: BLE001 — the refine pass is optional; the streaming text still flows
+        print("[media] cuda whisper failed, CPU int8:", e, flush=True)
+        try:
+            _whisper = WhisperModel(REFINE_MODEL, device="cpu", compute_type="int8")
+            _whisper_dev = "cpu"
+        except Exception as e2:  # noqa: BLE001
+            print("[media] whisper unavailable:", e2, flush=True)
+    if _whisper is not None:
+        # First call is slow (kernel selection); take it here rather than on the first turn.
+        import numpy as _np
+
+        t0 = time.monotonic()
+        list(_whisper.transcribe(_np.zeros(16000, dtype=_np.float32), language=REFINE_LANGUAGE, beam_size=1)[0])
+        print(f"[media] whisper ready on {_whisper_dev} ({time.monotonic() - t0:.1f}s warm-up)", flush=True)
+
 # SenseVoice encodes rich info as <|...|> tags before the transcription.
 _EMO_RE = re.compile(r"<\|(HAPPY|SAD|ANGRY|NEUTRAL|FEARFUL|DISGUSTED|SURPRISED|EMO_UNKNOWN)\|>")
 _EVT_RE = re.compile(r"<\|(Speech|BGM|Applause|Laughter|Cry|Sneeze|Breath|Cough)\|>")
@@ -50,7 +89,8 @@ _emotion_enabled = os.environ.get("EMOTION_ENABLED", "1") == "1"
 
 @app.get("/healthz")
 async def healthz():
-    return {"ok": True, "asr": ASR_MODEL, "device": _dev, "emotion_enabled": _emotion_enabled}
+    return {"ok": True, "asr": ASR_MODEL, "device": _dev, "emotion_enabled": _emotion_enabled,
+            "refine": REFINE_MODEL if _whisper is not None else None, "refine_device": _whisper_dev}
 
 
 @app.get("/config")
@@ -78,16 +118,63 @@ def _transcribe(path: str):
     return clean, emotion, events
 
 
-def _annotate(clean: str, emotion, events) -> str:
+def _note(emotion, events) -> str:
     notes = []
     if emotion and emotion not in ("NEUTRAL", "EMO_UNKNOWN"):
         notes.append("tone: " + emotion.lower())
     for e in events:
         if e in ("Laughter", "Applause", "Cry", "Cough", "Sneeze"):
             notes.append("laughing" if e == "Laughter" else e.lower())
-    if notes and clean:
-        return f"{clean} [{'; '.join(notes)}]"
-    return clean
+    return f"[{'; '.join(notes)}]" if notes else ""
+
+
+def _annotate(clean: str, emotion, events) -> str:
+    note = _note(emotion, events)
+    return f"{clean} {note}" if note and clean else clean
+
+
+def _refine(path: str) -> str:
+    """Whisper pass over one finished utterance: greedy-free beam search, no temperature
+    fallback (a fallback is where the hallucinations come from), no cross-segment
+    conditioning (each utterance stands alone)."""
+    segments, _info = _whisper.transcribe(
+        path, language=REFINE_LANGUAGE, beam_size=5, best_of=1, temperature=0.0,
+        condition_on_previous_text=False, initial_prompt=REFINE_PROMPT or None,
+        vad_filter=False, without_timestamps=True,
+    )
+    return " ".join(seg.text.strip() for seg in segments).strip()
+
+
+async def _save_upload(file: UploadFile) -> str:
+    data = await file.read()
+    suffix = os.path.splitext(file.filename or "audio.wav")[1] or ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
+        tf.write(data)
+        return tf.name
+
+
+@app.post("/v1/audio/refine")
+async def refine(file: UploadFile = File(...)):
+    """Second pass for a finished utterance: Whisper for the text, SenseVoice for the note,
+    run side by side. `text` is empty when Whisper is unavailable (the caller keeps the
+    streaming text); `note` is empty when the tone is neutral or notes are hidden."""
+    path = await _save_upload(file)
+    t0 = time.monotonic()
+    try:
+        tone_task = asyncio.to_thread(_transcribe, path)
+        if _whisper is not None:
+            (clean, emotion, events), refined = await asyncio.gather(tone_task, asyncio.to_thread(_refine, path))
+        else:
+            (clean, emotion, events), refined = await tone_task, ""
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    ms = int((time.monotonic() - t0) * 1000)
+    note = _note(emotion, events) if _emotion_enabled else ""
+    print(f"[refine] {ms}ms emo={emotion} events={events} whisper={refined!r} sensevoice={clean!r}", flush=True)
+    return JSONResponse({"text": refined, "note": note, "sensevoice_text": clean, "emotion": emotion, "events": events, "ms": ms})
 
 
 @app.post("/v1/audio/transcriptions")
@@ -98,11 +185,7 @@ async def transcriptions(
     response_format: str = Form("json"),
     temperature: str = Form("0"),
 ):
-    data = await file.read()
-    suffix = os.path.splitext(file.filename or "audio.wav")[1] or ".wav"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
-        tf.write(data)
-        path = tf.name
+    path = await _save_upload(file)
     try:
         info = sf.info(path)
         dur, rate, ch = info.duration, info.samplerate, info.channels
