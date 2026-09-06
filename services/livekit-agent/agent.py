@@ -68,7 +68,7 @@ KYUTAI_WS_URL = os.environ.get("KYUTAI_WS_URL", "ws://127.0.0.1:8092")
 KYUTAI_API_KEY = os.environ.get("KYUTAI_API_KEY", "public_token")
 TONE_NOTES = os.environ.get("TONE_NOTES", "1").strip() not in ("0", "false", "no", "")
 # Second pass (Whisper on the media sidecar) for the text of each finished utterance.
-STT_REFINE = os.environ.get("STT_REFINE", "1") == "1"
+STT_REFINE = os.environ.get("STT_REFINE", "1").strip() not in ("0", "false", "no", "")
 MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "5"))
 
 # Vesta Harness bridge. Empty URL = direct mode for every room.

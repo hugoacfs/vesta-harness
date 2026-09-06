@@ -477,6 +477,14 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                         self._words.append(word)
                         self._last_word_at = time.monotonic()
                         self._emit(stt.SpeechEventType.INTERIM_TRANSCRIPT, " ".join(self._words))
+                        if self._pause_at is not None and self._kyutai._refine_url:
+                            # A word after the pause (the model's emission lag): the pass started
+                            # at the pause is stale, and the grace restarts from this word, so a
+                            # fresh pass now still lands before the turn is finalized.
+                            if self._spec is not None:
+                                self._spec.cancel()
+                            self._spec = self._start_refine()
+                            self._spec_words = len(self._words)
                     elif kind == "Step":
                         prs = msg.get("prs") or []
                         if self._words and self._pause_at is None and len(prs) > PAUSE_HEAD and prs[PAUSE_HEAD] > PAUSE_THRESHOLD:
