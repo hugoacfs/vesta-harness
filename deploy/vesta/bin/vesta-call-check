@@ -32,7 +32,8 @@ import wave
 from livekit import api, rtc
 
 LIVEKIT_URL = "ws://192.168.0.2:7880"
-PREFIX = "dsh-"
+PREFIX = os.environ.get("ROOM_PREFIX", os.environ.get("DSH_ROOM_PREFIX", "dsh-"))   # staging: dshs-
+AGENT_NAME = os.environ.get("AGENT_NAME", "")                                       # empty: automatic dispatch
 
 
 def token(room: str) -> str:

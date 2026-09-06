@@ -83,6 +83,10 @@ DSH_BRIDGE_URL = os.environ.get("DSH_BRIDGE_URL", "").strip()
 # each worker accepts only the rooms of its own prefix (see accept_room); a rejected job is
 # offered to the other worker.
 AGENT_NAME = os.environ.get("AGENT_NAME", "").strip()
+# The worker's own HTTP server (health endpoint). Loopback only (the container shares the host
+# network), and a different port per worker: the staging worker takes 8082.
+AGENT_HTTP_HOST = os.environ.get("AGENT_HTTP_HOST", "127.0.0.1")
+AGENT_HTTP_PORT = int(os.environ.get("AGENT_HTTP_PORT", "8081"))
 DSH_BRIDGE_SECRET = os.environ.get("DSH_BRIDGE_SECRET") or os.environ.get("LIVEKIT_API_SECRET", "")
 DSH_ROOM_PREFIX = os.environ.get("DSH_ROOM_PREFIX", "dsh-")
 GREETING = os.environ.get("GREETING", "")                       # spoken once on join when set
@@ -956,4 +960,5 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, request_fnc=accept_room, agent_name=AGENT_NAME))
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, request_fnc=accept_room,
+                              agent_name=AGENT_NAME, host=AGENT_HTTP_HOST, port=AGENT_HTTP_PORT))
