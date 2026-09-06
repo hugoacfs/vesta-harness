@@ -46,6 +46,9 @@ NUM_CHANNELS = 1
 # STT: which pause-prediction head ends the turn (0: 0.5 s, 1: 1 s, 2: 2 s, 3: 3 s) and the threshold.
 PAUSE_HEAD = int(os.environ.get("KYUTAI_PAUSE_HEAD", "1"))
 PAUSE_THRESHOLD = float(os.environ.get("KYUTAI_PAUSE_THRESHOLD", "0.5"))
+# Words trail the audio by asr_delay (6 × 80 ms), so a pause prediction can fire before the
+# last word arrives: finalize this long after the pause, or after the latest word, whichever is later.
+PAUSE_GRACE_S = float(os.environ.get("KYUTAI_PAUSE_GRACE_S", "0.5"))
 # Fallback: finalize this long after the last word if the pause head never fires.
 FINAL_AFTER_SILENCE_S = float(os.environ.get("KYUTAI_FINAL_AFTER_SILENCE_S", "1.2"))
 # Audio is sent in chunks of this many samples (80 ms = one mimi frame).
@@ -274,6 +277,7 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         self._speech_started = False
         self._last_word_at = 0.0
         self._utterance_start = 0.0
+        self._pause_at: float | None = None   # when the pause head fired for the current utterance
         self._audio: list[np.ndarray] = []   # the utterance so far, for the tone lookup
 
     def _emit(self, kind: stt.SpeechEventType, text: str = "") -> None:
@@ -286,6 +290,7 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         text = " ".join(self._words).strip()
         self._words = []
         self._speech_started = False
+        self._pause_at = None
         audio = np.concatenate(self._audio) if self._audio else np.zeros(0, dtype=np.float32)
         self._audio = []
         log.info("kyutai stt: final (%s) %.1fs after first word: %r", reason, time.monotonic() - self._utterance_start, text[:80])
@@ -348,15 +353,20 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                         self._emit(stt.SpeechEventType.INTERIM_TRANSCRIPT, " ".join(self._words))
                     elif kind == "Step":
                         prs = msg.get("prs") or []
-                        if self._words and len(prs) > PAUSE_HEAD and prs[PAUSE_HEAD] > PAUSE_THRESHOLD:
-                            self._finalize("pause")
+                        if self._words and self._pause_at is None and len(prs) > PAUSE_HEAD and prs[PAUSE_HEAD] > PAUSE_THRESHOLD:
+                            self._pause_at = time.monotonic()   # the watchdog finalizes after the grace
                     elif kind == "Error":
                         raise APIError(f"kyutai stt: {msg.get('message')}")
 
             async def watchdog() -> None:
                 while True:
-                    await asyncio.sleep(0.1)
-                    if self._words and time.monotonic() - self._last_word_at > FINAL_AFTER_SILENCE_S:
+                    await asyncio.sleep(0.05)
+                    if not self._words:
+                        continue
+                    now = time.monotonic()
+                    if self._pause_at is not None and now - max(self._pause_at, self._last_word_at) >= PAUSE_GRACE_S:
+                        self._finalize("pause")
+                    elif now - self._last_word_at > FINAL_AFTER_SILENCE_S:
                         self._finalize("silence")
 
             tasks = [asyncio.create_task(send()), asyncio.create_task(recv()), asyncio.create_task(watchdog())]

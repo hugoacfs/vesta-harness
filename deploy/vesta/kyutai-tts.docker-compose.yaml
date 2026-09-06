@@ -12,6 +12,7 @@ services:
       dockerfile: Dockerfile
     container_name: kyutai-tts
     restart: unless-stopped
+    profiles: [legacy]   # fallback TTS; moshi-server holds the 3060 now. `docker compose --profile legacy up -d` after stopping moshi-server
     env_file: [.env]                  # HF_TOKEN — lifts HF anon rate limit for the voice-repo pull
     environment:
       - PYTHONUNBUFFERED=1

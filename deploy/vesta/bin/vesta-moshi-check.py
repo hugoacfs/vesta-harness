@@ -75,20 +75,22 @@ async def stt(path: str) -> int:
                 await asyncio.sleep(0.08)
 
         st = asyncio.create_task(send())
-        fired = None
+        fired = None; last_word = None
         try:
             async for raw in ws:
                 msg = msgpack.unpackb(raw, raw=False)
                 k = msg["type"]
                 now = time.monotonic() - t0
                 if k == "Word":
-                    words.append(msg["text"])
+                    words.append(msg["text"]); last_word = now
                     print(f"  +{now:5.2f}s word {msg['text']!r} (audio pos {msg.get('start_time', 0):.2f}s)")
                 elif k == "Step":
                     prs = msg.get("prs") or []
                     if words and fired is None and len(prs) > 1 and prs[1] > 0.5:
                         fired = now
-                        print(f"  +{now:5.2f}s pause head[1]={prs[1]:.2f} -> end of turn ({now - total_s:+.2f}s vs audio end)")
+                        print(f"  +{now:5.2f}s pause head[1]={prs[1]:.2f} ({now - total_s:+.2f}s vs audio end); waiting 0.5s grace for trailing words")
+                    if fired is not None and now - max(fired, last_word or 0) >= 0.5:
+                        print(f"  +{now:5.2f}s end of turn")
                         break
                 elif k == "Error":
                     print("error:", msg.get("message")); break
