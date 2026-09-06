@@ -1,0 +1,33 @@
+# Kyutai moshi-server (Rust): streaming TTS + STT with semantic end-of-turn on the
+# 3060 — the same server Unmute runs. Installed at /srv/ai/compose/moshi-server/;
+# .env carries HUGGING_FACE_HUB_TOKEN (HF_TOKEN) for the model pulls. Shares the
+# Hugging Face cache with the Python TTS sidecar so tts-1.6b and the voices are
+# not downloaded twice. Source of truth: services/moshi-server in the checkout.
+name: moshi-server
+
+services:
+  moshi-server:
+    build:
+      context: /home/hugo/code/vesta-harness/services/moshi-server
+      dockerfile: Dockerfile
+    container_name: moshi-server
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      - HF_HOME=/app/cache
+      - HF_HUB_CACHE=/app/cache/hub
+    volumes:
+      - /srv/ai/compose/kyutai-tts/cache:/app/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["GPU-4c4e6e17-74ee-b26e-9b6a-a047eaaa74e0"]  # RTX 3060 only
+              capabilities: [gpu]
+    ports:
+      - "127.0.0.1:8090:8080"         # loopback: livekit-agent (host networking) and local tests
+    networks: [default]
+
+networks:
+  default:
