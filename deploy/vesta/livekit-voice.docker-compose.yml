@@ -94,6 +94,13 @@ services:
       - TONE_NOTES=1
       - STT_REFINE=1                        # each finished utterance re-read by Whisper (media /v1/audio/refine)
       - BRIDGE_GREETING=
+      # Filler lines (services/livekit-agent/fillers.py): "Hmm." when the first words are late,
+      # "Let me check." on the first tool call, "Still on it." during long tool work.
+      - FILLERS=1
+      - FILLER_THINK_AFTER_S=0.8
+    volumes:
+      - /srv/ai/compose/livekit-voice/fillers.yaml:/app/fillers.yaml:ro   # copy of deploy/vesta/fillers.yaml
+      - /srv/ai/compose/livekit-voice/fillers:/app/fillers                # rendered clips, one dir per voice
     depends_on: [livekit-server, livekit-media]
 
   # Next.js UI (LiveKit agent-starter-react, rebranded). Stopped; kept as a rollback.

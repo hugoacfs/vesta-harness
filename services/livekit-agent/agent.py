@@ -32,11 +32,13 @@ from typing import Any
 
 import aiohttp
 import httpx
+import numpy as np
 from livekit import rtc
 from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
+    JobProcess,
     RoomInputOptions,
     RunContext,
     WorkerOptions,
@@ -46,6 +48,8 @@ from livekit.agents import (
 )
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 from livekit.plugins import openai, silero
+
+from fillers import FILLERS, FILLERS_FILE, FillerLibrary
 from livekit.plugins.turn_detector.english import EnglishModel
 
 log = logging.getLogger("vesta-voice")
@@ -84,6 +88,8 @@ COMMAND_TIMEOUT_S = float(os.environ.get("DSH_COMMAND_TIMEOUT_S", "10"))  # host
 TOOL_ACK = os.environ.get("DSH_TOOL_ACK", "Let me check.").strip()
 PROGRESS_INTERVAL_S = float(os.environ.get("DSH_PROGRESS_INTERVAL_S", "25"))
 PROGRESS_PHRASES = [p.strip() for p in os.environ.get("DSH_PROGRESS_PHRASES", "Still on it.|Working on it.|Almost there.").split("|") if p.strip()]
+# Filler clips (fillers.py): a "thinking" line when the reply's first words are this late.
+FILLER_THINK_AFTER_S = float(os.environ.get("FILLER_THINK_AFTER_S", "0.8"))
 # Turn-taking: how long after you stop before the agent takes the turn, and how long you must
 # speak over it before it yields. LiveKit defaults are 0.5 / 6.0 / 0.5.
 # The streaming STT's pause prediction already implies a pause, so its default endpointing wait is shorter.
@@ -360,8 +366,35 @@ class DshBridge:
         self.tone_note: str | None = None
         self.closed = asyncio.Event()
 
-    def attach(self, session: AgentSession) -> None:
+    def attach(self, session: AgentSession, tts_engine: Any = None, fillers: FillerLibrary | None = None) -> None:
         self._session = session
+        self._tts = tts_engine
+        self._fillers = fillers
+
+    def filler(self, category: str) -> bool:
+        """Play a pre-rendered line of the category: through the open reply stream when there
+        is one, on its own otherwise. False when nothing suitable is rendered or a reply is
+        mid-audio (the caller then falls back to words, or stays quiet)."""
+        library = getattr(self, "_fillers", None)
+        if library is None or self._session is None:
+            return False
+        picked = library.pick(category)
+        if picked is None:
+            return False
+        phrase, pcm = picked
+        tts_engine = getattr(self, "_tts", None)
+        if tts_engine is not None and hasattr(tts_engine, "play_filler") and tts_engine.play_filler(pcm):
+            log.info("filler %s (in reply): %r", category, phrase)
+            return True
+        if self._turn is not None:
+            return False   # a reply is speaking; a clip on top of it would collide
+        try:
+            self._session.say(phrase, audio=library.frames(pcm), add_to_chat_ctx=False)
+        except Exception as e:  # noqa: BLE001
+            log.warning("filler say failed: %s", e)
+            return False
+        log.info("filler %s: %r", category, phrase)
+        return True
 
     async def connect(self, timeout: float = 10.0) -> None:
         self._http = aiohttp.ClientSession()
@@ -651,17 +684,26 @@ class DshBridgeStream(llm.LLMStream):
         last_speech_at = time.monotonic()
         deadline = last_speech_at + TURN_TIMEOUT_S
         progress_index = 0
+        think_at = last_speech_at + FILLER_THINK_AFTER_S
+        thought = not FILLERS
         try:
             while True:
+                now = time.monotonic()
+                wait = 1.0 if (thought or spoken_any or tool_active) else max(0.05, min(1.0, think_at - now))
                 try:
-                    frame = await asyncio.wait_for(queue.get(), 1.0)
+                    frame = await asyncio.wait_for(queue.get(), wait)
                 except asyncio.TimeoutError:
                     now = time.monotonic()
                     if now > deadline:
                         raise
+                    if not thought and not spoken_any and not tool_active and now >= think_at:
+                        # The first words are late: a short "thinking" line from the clip library.
+                        thought = True
+                        self._bridge.filler("thinking")
                     if (tool_active and PROGRESS_INTERVAL_S > 0 and progress_index < len(PROGRESS_PHRASES)
                             and now - last_speech_at >= PROGRESS_INTERVAL_S):
-                        self._reply(request_id, " " + PROGRESS_PHRASES[progress_index] + " ")
+                        if not (FILLERS and self._bridge.filler("still_working")):
+                            self._reply(request_id, " " + PROGRESS_PHRASES[progress_index] + " ")
                         progress_index += 1
                         last_speech_at = now
                     continue
@@ -692,11 +734,16 @@ class DshBridgeStream(llm.LLMStream):
                 elif kind == "status":
                     log.info("harness tool: %s", frame.get("tool"))
                     tool_active = True
-                    if not spoken_any and TOOL_ACK:
-                        # The model went straight to tools: fill the silence once.
-                        self._reply(request_id, TOOL_ACK + " ")
-                        spoken_any = True
-                        last_speech_at = time.monotonic()
+                    if not spoken_any:
+                        # The model went straight to tools: fill the silence once, with a
+                        # rendered "working" line or, failing that, the fixed ack.
+                        if FILLERS and self._bridge.filler("working"):
+                            spoken_any = True
+                            last_speech_at = time.monotonic()
+                        elif TOOL_ACK:
+                            self._reply(request_id, TOOL_ACK + " ")
+                            spoken_any = True
+                            last_speech_at = time.monotonic()
         except asyncio.CancelledError:
             interrupted = True
             raise
@@ -764,6 +811,33 @@ def _follow_callers(ctx: JobContext, session: AgentSession) -> None:
     ctx.room.on("participant_disconnected", on_disconnected)
 
 
+def prewarm(proc: JobProcess) -> None:
+    """Once per job process, before any call: the VAD, and the filler clips (rendered into
+    the cache dir the first time a voice is seen, read from it afterwards)."""
+    proc.userdata["vad"] = silero.VAD.load()
+    if not (FILLERS and TTS_BACKEND == "moshi"):
+        return
+    try:
+        from kyutai import KyutaiTTS, _Stretcher
+
+        tts_engine = KyutaiTTS(url=KYUTAI_WS_URL, voice=TTS_VOICE, api_key=KYUTAI_API_KEY, speed=TTS_SPEED)
+
+        def stretch(pcm):
+            st = _Stretcher(TTS_SPEED)
+            return np.concatenate([st.feed(pcm), st.flush()])
+
+        library = FillerLibrary.from_file(FILLERS_FILE, tts_engine.voice_key, stretch)
+        missing = library.missing()
+        if missing:
+            log.info("rendering %d filler lines for voice %s", len(missing), tts_engine.voice_key)
+            library.render_blocking(tts_engine)
+        loaded = library.load()
+        log.info("filler clips ready: %d (%s)", loaded, ", ".join(f"{c}={len([p for p in ps if p in library._clips])}" for c, ps in library.phrases.items()))
+        proc.userdata["fillers"] = library
+    except Exception as e:  # noqa: BLE001
+        log.warning("fillers unavailable this process: %s", e)
+
+
 async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
     room = ctx.room.name or ""
@@ -789,7 +863,8 @@ async def entrypoint(ctx: JobContext) -> None:
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
 
-    vad = silero.VAD.load()
+    vad = ctx.proc.userdata.get("vad") or silero.VAD.load()
+    fillers: FillerLibrary | None = ctx.proc.userdata.get("fillers")
     if STT_BACKEND == "moshi":
         from kyutai import KyutaiSTT
 
@@ -842,7 +917,7 @@ async def entrypoint(ctx: JobContext) -> None:
         # The listener gate (kyutai.py) holds room audio while Vesta speaks and the caller is silent.
         session.on("agent_state_changed", lambda ev: stt_engine.set_agent_speaking(ev.new_state == "speaking"))
     if bridge is not None:
-        bridge.attach(session)   # passive speech and approval questions need the running session
+        bridge.attach(session, tts_engine, fillers)   # passive speech, approval questions and fillers need the running session
     greeting = BRIDGE_GREETING if bridge is not None else GREETING
     if greeting:
         # A fixed TTS line, NOT an LLM call: a system-only generate_reply 400s on LiteLLM.
@@ -850,4 +925,4 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))

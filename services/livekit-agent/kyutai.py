@@ -176,6 +176,18 @@ class _Pacer:
             self._stretch.set_speed(self._speed_for(lead))
         self._emit(self._stretch.feed(pcm), now)
 
+    def push_clip(self, pcm: np.ndarray) -> None:
+        """Pre-rendered audio (already at speed): play it now, behind anything held, then
+        hold a fresh pre-roll for the server audio that follows it."""
+        now = time.monotonic()
+        if not self._released:
+            self._release(now)
+        self._pushed += len(pcm)
+        self._push(_to_s16(pcm))
+        self._released = False
+        self._held = []
+        self._held_n = 0
+
     def finish(self) -> None:
         now = time.monotonic()
         self._emit(self._stretch.flush(), now)
@@ -233,10 +245,27 @@ class KyutaiTTS(tts.TTS):
         self._voice = voice
         self._api_key = api_key
         self._speed = speed
+        self._active: KyutaiSynthesizeStream | None = None   # the reply stream currently open, if any
 
     @property
     def label(self) -> str:
         return "kyutai.moshi-server"
+
+    @property
+    def voice_key(self) -> str:
+        """Names the clip cache for this server + voice."""
+        import hashlib
+        return hashlib.sha1(f"{self._url}|{self._voice}".encode("utf-8")).hexdigest()[:12]
+
+    def play_filler(self, pcm: np.ndarray) -> bool:
+        """Play a pre-rendered clip through the open reply stream, ahead of the words still to
+        come, when that stream is not in the middle of server audio. False when there is no
+        such stream (the caller then speaks it on its own, or not at all)."""
+        stream = self._active
+        if stream is None or not stream.accepts_filler():
+            return False
+        stream.queue_filler(pcm)
+        return True
 
     @property
     def speed(self) -> float:
@@ -327,6 +356,15 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
     def __init__(self, *, tts: KyutaiTTS, conn_options: APIConnectOptions) -> None:
         super().__init__(tts=tts, conn_options=conn_options)
         self._kyutai = tts
+        self._fillers: asyncio.Queue[np.ndarray] = asyncio.Queue()
+        self._last_audio_at = 0.0   # server audio arrival; a clip must not land in the middle of it
+        self._closed = False
+
+    def accepts_filler(self) -> bool:
+        return not self._closed and time.monotonic() - self._last_audio_at > 0.5
+
+    def queue_filler(self, pcm: np.ndarray) -> None:
+        self._fillers.put_nowait(pcm)
 
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
         request_id = utils.shortuuid()
@@ -337,31 +375,57 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
         words: asyncio.Queue[str | None] = asyncio.Queue()
         splitter = _WordSplitter()
         pacer = _Pacer(self._kyutai.speed, output_emitter.push)
-        started = False
+        segment_open = False
+        speaking = False          # the server utterance has been opened
         t0 = time.monotonic()
         first = [True]
         last_word_at = 0.0
         text_gaps = 0
+        clips = 0
 
         def on_pcm(pcm: np.ndarray) -> None:
             if first[0]:
                 first[0] = False
                 log.info("kyutai tts: first audio %.2fs after first word", time.monotonic() - t0)
+            self._last_audio_at = time.monotonic()
             pacer.feed(pcm)
 
         speak_task: asyncio.Task[None] | None = None
+        source = self._input_ch.__aiter__()
+        next_item: asyncio.Future = asyncio.ensure_future(source.__anext__())
+        self._kyutai._active = self
         try:
-            async for item in self._input_ch:
+            while True:
+                filler_get = asyncio.ensure_future(self._fillers.get())
+                done, _ = await asyncio.wait({next_item, filler_get}, return_when=asyncio.FIRST_COMPLETED)
+                if filler_get in done:
+                    clip = filler_get.result()
+                    if not segment_open:
+                        segment_open = True
+                        output_emitter.start_segment(segment_id=utils.shortuuid())
+                    self._mark_started()
+                    pacer.push_clip(clip)
+                    clips += 1
+                else:
+                    filler_get.cancel()
+                if next_item not in done:
+                    continue
+                try:
+                    item = next_item.result()
+                except StopAsyncIteration:
+                    break
                 if isinstance(item, self._FlushSentinel):
-                    if started:
+                    if speaking:
                         for w in splitter.flush():
                             words.put_nowait(w)
                         words.put_nowait(None)
                     break
-                if not started:
-                    started = True
+                if not speaking:
+                    speaking = True
                     t0 = time.monotonic()
-                    output_emitter.start_segment(segment_id=utils.shortuuid())
+                    if not segment_open:
+                        segment_open = True
+                        output_emitter.start_segment(segment_id=utils.shortuuid())
                     speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm))
                 for w in splitter.feed(item):
                     now = time.monotonic()
@@ -370,13 +434,22 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
                     last_word_at = now
                     self._mark_started()
                     words.put_nowait(w)
+                next_item = asyncio.ensure_future(source.__anext__())
+            self._closed = True
             if speak_task is not None:
                 await speak_task
-                pacer.finish()
+            pacer.finish()
+            if segment_open:
                 output_emitter.end_segment()
         finally:
-            if started:
-                log.info("kyutai tts: utterance %s, word gaps over %dms %d", pacer.summary(), int(TEXT_GAP_S * 1000), text_gaps)
+            self._closed = True
+            if self._kyutai._active is self:
+                self._kyutai._active = None
+            if not next_item.done():
+                next_item.cancel()
+            if speaking or clips:
+                log.info("kyutai tts: utterance %s, word gaps over %dms %d, clips %d",
+                         pacer.summary(), int(TEXT_GAP_S * 1000), text_gaps, clips)
 
 
 class KyutaiChunkedStream(tts.ChunkedStream):

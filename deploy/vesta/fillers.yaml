@@ -1,0 +1,33 @@
+# Vesta's filler lines: short things she says in her own voice while thinking or working
+# (services/livekit-agent/fillers.py). Rendered once per voice into /app/fillers (host:
+# /srv/ai/compose/livekit-voice/fillers) when the agent worker starts; edit this file, copy it
+# next to the compose file, restart the agent, and new lines render on the next start.
+# Keep them short: thinking lines over 0.9 s and others over 1.3 s are never played.
+
+thinking:        # the reply's first words are late (FILLER_THINK_AFTER_S after your turn ends)
+  - "Hmm."
+  - "Let me think."
+  - "Let me see."
+  - "Right."
+  - "Mm, one moment."
+  - "Good question."
+  - "Mm-hm."
+
+working:         # the first tool call of a turn (replaces the fixed DSH_TOOL_ACK line)
+  - "Let me check."
+  - "Looking at that now."
+  - "One sec."
+  - "I'll take a look."
+  - "Checking."
+
+still_working:   # every DSH_PROGRESS_INTERVAL_S of silent tool work (replaces DSH_PROGRESS_PHRASES)
+  - "Still on it."
+  - "Almost there."
+  - "This is taking a moment."
+  - "Bear with me."
+  - "Nearly done."
+
+acknowledge:     # reserved for a spoken acknowledgement (not wired yet)
+  - "Okay."
+  - "Sure."
+  - "Got it."
