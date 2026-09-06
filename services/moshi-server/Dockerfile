@@ -37,6 +37,6 @@ RUN chmod +x /app/entrypoint.sh && mkdir -p /app/static /tmp/moshi-logs
 
 EXPOSE 8080
 ENV RUST_BACKTRACE=1
-HEALTHCHECK --start-period=5m --interval=30s CMD curl --fail http://localhost:8080/api/build_info || exit 1
+HEALTHCHECK --start-period=5m --interval=30s CMD curl --fail http://127.0.0.1:8092/api/build_info || exit 1
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["worker", "--config", "/app/configs/vesta.toml", "--port", "8080"]

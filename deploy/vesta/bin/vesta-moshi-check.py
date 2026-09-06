@@ -19,7 +19,7 @@ import msgpack
 import numpy as np
 import websockets
 
-URL = os.environ.get("KYUTAI_WS_URL", "ws://127.0.0.1:8090")
+URL = os.environ.get("KYUTAI_WS_URL", "ws://127.0.0.1:8092")
 KEY = os.environ.get("KYUTAI_API_KEY", "public_token")
 VOICE = os.environ.get("TTS_VOICE", "expresso/ex03-ex01_calm_001_channel1_1143s.wav")
 HDR = {"kyutai-api-key": KEY}

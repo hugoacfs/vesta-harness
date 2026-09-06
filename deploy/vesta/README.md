@@ -103,7 +103,7 @@ docker exec livekit-agent python /tmp/moshi-check.py tts "Hello there, this is a
 docker exec livekit-agent python /tmp/moshi-check.py stt /tmp/q2.wav
 ```
 
-The agent picks backends by environment (`deploy/vesta/livekit-voice.docker-compose.yml`): `TTS_BACKEND=moshi|openai`, `STT_BACKEND=moshi|sensevoice`, `KYUTAI_WS_URL` (default `ws://127.0.0.1:8090`), `KYUTAI_PAUSE_HEAD` (0: 0.5 s, 1: 1 s, 2: 2 s pause ends the turn; default 1), `KYUTAI_FINAL_AFTER_SILENCE_S` (fallback, 1.2). With the moshi STT the SenseVoice sidecar stays up only for the "[tone: …]" notes: each finished utterance is sent there in the background and the note is appended to the next spoken turn if it arrives in time (`TONE_NOTES=0` disables). The Python TTS sidecar (`kyutai-tts`) and SenseVoice keep working as the fallback backends.
+The agent picks backends by environment (`deploy/vesta/livekit-voice.docker-compose.yml`): `TTS_BACKEND=moshi|openai`, `STT_BACKEND=moshi|sensevoice`, `KYUTAI_WS_URL` (default `ws://127.0.0.1:8092`; host networking, loopback only), `KYUTAI_PAUSE_HEAD` (0: 0.5 s, 1: 1 s, 2: 2 s pause ends the turn; default 1), `KYUTAI_FINAL_AFTER_SILENCE_S` (fallback, 1.2). With the moshi STT the SenseVoice sidecar stays up only for the "[tone: …]" notes: each finished utterance is sent there in the background and the note is appended to the next spoken turn if it arrives in time (`TONE_NOTES=0` disables). The Python TTS sidecar (`kyutai-tts`) and SenseVoice keep working as the fallback backends.
 
 ## Vesta Voice preset
 

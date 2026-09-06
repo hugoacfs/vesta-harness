@@ -12,6 +12,11 @@ services:
       dockerfile: Dockerfile
     container_name: moshi-server
     restart: unless-stopped
+    # Host networking bound to loopback only (like livekit-agent): the agent dials
+    # ws://127.0.0.1:8092, nothing is exposed beyond the host, and model pulls use
+    # the host's resolver. 8090 is nginx.
+    network_mode: host
+    command: ["worker", "--config", "/app/configs/vesta.toml", "--addr", "127.0.0.1", "--port", "8092"]
     env_file: [.env]
     environment:
       - HF_HOME=/app/cache
@@ -25,9 +30,3 @@ services:
             - driver: nvidia
               device_ids: ["GPU-4c4e6e17-74ee-b26e-9b6a-a047eaaa74e0"]  # RTX 3060 only
               capabilities: [gpu]
-    ports:
-      - "127.0.0.1:8090:8080"         # loopback: livekit-agent (host networking) and local tests
-    networks: [default]
-
-networks:
-  default:
