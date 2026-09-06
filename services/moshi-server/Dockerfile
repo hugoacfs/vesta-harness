@@ -26,10 +26,15 @@ RUN mkdir -p moshi-server && cd moshi-server \
 # CUDA kernels for the 3060 (sm_86); the GPU is not visible at build time.
 ENV CUDA_COMPUTE_CAP=86
 ARG MOSHI_SERVER_VERSION=0.6.4
+# Compile inside the venv so pyo3 links the venv's interpreter (the one whose
+# site-packages hold torch and moshi); outside it, `python3` is the system 3.10
+# and the embedded interpreter cannot load the venv's C extensions at runtime.
 RUN cd moshi-server \
-    && export LD_LIBRARY_PATH="$(uv run python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')" \
-    && export CXXFLAGS="-include cstdint" \
-    && cargo install --features cuda moshi-server@${MOSHI_SERVER_VERSION}
+    && uv run --locked --project . -- bash -c ' \
+         export LD_LIBRARY_PATH="$(python -c "import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))")" \
+         && export PYO3_PYTHON="$(command -v python)" \
+         && export CXXFLAGS="-include cstdint" \
+         && cargo install --features cuda moshi-server@${MOSHI_SERVER_VERSION}'
 
 COPY configs /app/configs
 COPY entrypoint.sh /app/entrypoint.sh
