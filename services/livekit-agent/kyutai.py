@@ -27,6 +27,11 @@ import time
 import uuid
 from urllib.parse import quote
 
+import io
+import re
+import wave
+
+import aiohttp
 import msgpack
 import numpy as np
 import websockets
@@ -45,6 +50,7 @@ PAUSE_THRESHOLD = float(os.environ.get("KYUTAI_PAUSE_THRESHOLD", "0.5"))
 FINAL_AFTER_SILENCE_S = float(os.environ.get("KYUTAI_FINAL_AFTER_SILENCE_S", "1.2"))
 # Audio is sent in chunks of this many samples (80 ms = one mimi frame).
 STT_CHUNK = 1920
+_TONE_NOTE = re.compile(r"\[tone:[^\]]*\]")
 
 
 def _headers(api_key: str) -> dict[str, str]:
@@ -214,11 +220,18 @@ class KyutaiChunkedStream(tts.ChunkedStream):
 
 # ---------------------------------------------------------------- STT
 class KyutaiSTT(stt.STT):
-    def __init__(self, *, url: str, api_key: str = "public_token", language: str = "en") -> None:
+    """tone_url: the SenseVoice sidecar's transcription endpoint; when set, each finished
+    utterance is also sent there and its "[tone: …]" note is handed to on_tone out of band,
+    so the transcript never waits for it."""
+
+    def __init__(self, *, url: str, api_key: str = "public_token", language: str = "en",
+                 tone_url: str | None = None, on_tone=None) -> None:
         super().__init__(capabilities=stt.STTCapabilities(streaming=True, interim_results=True, offline_recognize=False))
         self._url = url.rstrip("/")
         self._api_key = api_key
         self._language = language
+        self._tone_url = tone_url
+        self._on_tone = on_tone
 
     @property
     def label(self) -> str:
@@ -230,6 +243,27 @@ class KyutaiSTT(stt.STT):
     def stream(self, *, language: NotGivenOr[str] = NOT_GIVEN, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS) -> stt.RecognizeStream:
         return KyutaiRecognizeStream(stt=self, conn_options=conn_options, language=self._language)
 
+    async def tone_of(self, pcm: np.ndarray) -> str | None:
+        """Ask the SenseVoice sidecar how the utterance sounded; None when unavailable or neutral."""
+        if not self._tone_url or len(pcm) < SAMPLE_RATE // 4:
+            return None
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(SAMPLE_RATE)
+            w.writeframes(_to_s16(pcm))
+        form = aiohttp.FormData()
+        form.add_field("file", buf.getvalue(), filename="utterance.wav", content_type="audio/wav")
+        form.add_field("model", "whisper-1")
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as http:
+                async with http.post(self._tone_url, data=form) as r:
+                    data = await r.json()
+        except Exception as e:  # noqa: BLE001
+            log.warning("tone lookup failed: %s", e)
+            return None
+        m = _TONE_NOTE.search(str(data.get("text", "")))
+        return m.group(0) if m else None
+
 
 class KyutaiRecognizeStream(stt.RecognizeStream):
     def __init__(self, *, stt: KyutaiSTT, conn_options: APIConnectOptions, language: str) -> None:
@@ -240,6 +274,7 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         self._speech_started = False
         self._last_word_at = 0.0
         self._utterance_start = 0.0
+        self._audio: list[np.ndarray] = []   # the utterance so far, for the tone lookup
 
     def _emit(self, kind: stt.SpeechEventType, text: str = "") -> None:
         ev = stt.SpeechEvent(type=kind, request_id="", alternatives=[stt.SpeechData(language=self._language, text=text)] if text or kind in (stt.SpeechEventType.INTERIM_TRANSCRIPT, stt.SpeechEventType.FINAL_TRANSCRIPT) else [])
@@ -251,9 +286,17 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         text = " ".join(self._words).strip()
         self._words = []
         self._speech_started = False
+        audio = np.concatenate(self._audio) if self._audio else np.zeros(0, dtype=np.float32)
+        self._audio = []
         log.info("kyutai stt: final (%s) %.1fs after first word: %r", reason, time.monotonic() - self._utterance_start, text[:80])
         self._emit(stt.SpeechEventType.FINAL_TRANSCRIPT, text)
         self._emit(stt.SpeechEventType.END_OF_SPEECH)
+        if self._kyutai._tone_url and self._kyutai._on_tone is not None:
+            async def _tone() -> None:
+                note = await self._kyutai.tone_of(audio)
+                if note:
+                    self._kyutai._on_tone(note)
+            asyncio.get_running_loop().create_task(_tone())
 
     async def _run(self) -> None:
         url = f"{self._kyutai._url}/api/asr-streaming"
@@ -276,6 +319,10 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                     if frame.num_channels > 1:
                         samples = samples.reshape(-1, frame.num_channels).mean(axis=1)
                     pending = np.concatenate([pending, samples])
+                    if self._speech_started or len(self._audio) < 12:
+                        self._audio.append(samples)          # keep ~1 s of lead-in before the first word
+                        if not self._speech_started and len(self._audio) > 12:
+                            self._audio = self._audio[-12:]
                     while len(pending) >= STT_CHUNK:
                         chunk, pending = pending[:STT_CHUNK], pending[STT_CHUNK:]
                         await ws.send(msgpack.packb({"type": "Audio", "pcm": chunk.tolist()}, use_single_float=True))

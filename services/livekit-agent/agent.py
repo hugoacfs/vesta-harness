@@ -65,6 +65,7 @@ TTS_BACKEND = os.environ.get("TTS_BACKEND", "openai").strip().lower()
 STT_BACKEND = os.environ.get("STT_BACKEND", "sensevoice").strip().lower()
 KYUTAI_WS_URL = os.environ.get("KYUTAI_WS_URL", "ws://127.0.0.1:8090")
 KYUTAI_API_KEY = os.environ.get("KYUTAI_API_KEY", "public_token")
+TONE_NOTES = os.environ.get("TONE_NOTES", "1").strip() not in ("0", "false", "no", "")
 MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "5"))
 
 # Vesta Harness bridge. Empty URL = direct mode for every room.
@@ -351,6 +352,8 @@ class DshBridge:
         self.pending_approval: dict[str, Any] | None = None
         # ask_user_question / plan review in flight: items asked one at a time, answers collected
         self.pending_question: dict[str, Any] | None = None
+        # "[tone: …]" from the SenseVoice sidecar for the utterance being answered (moshi STT path).
+        self.tone_note: str | None = None
         self.closed = asyncio.Event()
 
     def attach(self, session: AgentSession) -> None:
@@ -611,6 +614,9 @@ class DshBridgeStream(llm.LLMStream):
         request_id = f"vesta-{uuid.uuid4().hex[:12]}"
         if not text:
             return
+        note, self._bridge.tone_note = self._bridge.tone_note, None
+        if note and "[tone:" not in text:
+            text = f"{text} {note}"
         # Spoken approvals and commands are settled here; the model never sees them.
         if self._bridge.pending_approval is not None:
             decision = classify_decision(text)
@@ -737,7 +743,13 @@ async def entrypoint(ctx: JobContext) -> None:
 
     if STT_BACKEND == "moshi":
         from kyutai import KyutaiSTT
-        stt_engine = KyutaiSTT(url=KYUTAI_WS_URL, api_key=KYUTAI_API_KEY, language="en")
+
+        def _tone(note: str) -> None:
+            if bridge is not None:
+                bridge.tone_note = note
+
+        stt_engine = KyutaiSTT(url=KYUTAI_WS_URL, api_key=KYUTAI_API_KEY, language="en",
+                               tone_url=f"{MEDIA_URL}/audio/transcriptions" if TONE_NOTES else None, on_tone=_tone)
     else:
         stt_engine = openai.STT(model="whisper-1", language="en", base_url=MEDIA_URL, api_key="not-needed")
     if TTS_BACKEND == "moshi":
