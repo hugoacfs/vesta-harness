@@ -415,20 +415,29 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
                 except StopAsyncIteration:
                     break
                 if isinstance(item, self._FlushSentinel):
+                    tail = splitter.flush()
+                    if tail and not speaking:
+                        speaking, t0 = True, time.monotonic()
+                        if not segment_open:
+                            segment_open = True
+                            output_emitter.start_segment(segment_id=utils.shortuuid())
+                        speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm))
                     if speaking:
-                        for w in splitter.flush():
+                        for w in tail:
                             words.put_nowait(w)
                         words.put_nowait(None)
                     break
-                if not speaking:
-                    speaking = True
-                    t0 = time.monotonic()
-                    if not segment_open:
-                        segment_open = True
-                        output_emitter.start_segment(segment_id=utils.shortuuid())
-                    speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm))
+                # The server utterance opens on the first word, not the first chunk: the reply
+                # stream is opened with a blank chunk as soon as a turn starts (so clips can play
+                # while the model thinks), and a blank must not hold a TTS channel.
                 for w in splitter.feed(item):
                     now = time.monotonic()
+                    if not speaking:
+                        speaking, t0 = True, now
+                        if not segment_open:
+                            segment_open = True
+                            output_emitter.start_segment(segment_id=utils.shortuuid())
+                        speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm))
                     if last_word_at and now - last_word_at > TEXT_GAP_S:
                         text_gaps += 1   # the model paused mid-reply; the pre-roll is what covers this
                     last_word_at = now

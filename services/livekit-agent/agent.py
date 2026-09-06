@@ -89,7 +89,7 @@ TOOL_ACK = os.environ.get("DSH_TOOL_ACK", "Let me check.").strip()
 PROGRESS_INTERVAL_S = float(os.environ.get("DSH_PROGRESS_INTERVAL_S", "25"))
 PROGRESS_PHRASES = [p.strip() for p in os.environ.get("DSH_PROGRESS_PHRASES", "Still on it.|Working on it.|Almost there.").split("|") if p.strip()]
 # Filler clips (fillers.py): a "thinking" line when the reply's first words are this late.
-FILLER_THINK_AFTER_S = float(os.environ.get("FILLER_THINK_AFTER_S", "0.8"))
+FILLER_THINK_AFTER_S = float(os.environ.get("FILLER_THINK_AFTER_S", "1.0"))
 # Turn-taking: how long after you stop before the agent takes the turn, and how long you must
 # speak over it before it yields. LiveKit defaults are 0.5 / 6.0 / 0.5.
 # The streaming STT's pause prediction already implies a pause, so its default endpointing wait is shorter.
@@ -681,6 +681,10 @@ class DshBridgeStream(llm.LLMStream):
             self._reply(request_id, await self._bridge.request_permission(preset))
             return
         queue = await self._bridge.send_turn(text)
+        if FILLERS:
+            # A blank first chunk opens the reply's TTS stream now rather than at the first
+            # word, so a filler clip can play through it while the model is still thinking.
+            self._reply(request_id, " ")
         spoken = SpokenTextFilter()
         interrupted = False
         spoken_any = False
