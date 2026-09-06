@@ -26,7 +26,31 @@ export type AgentToHost =
     readonly type: 'permission'
     readonly preset: string
   }
+  | {
+    /** The user answered a pending question set by voice (one answer per question item). */
+    readonly type: 'question-answer'
+    readonly id: string
+    readonly answers: readonly VoiceQuestionAnswer[]
+  }
   | { readonly type: 'ping' }
+
+/** One question item as spoken to the user: the tool's item without model-facing detail. */
+export interface VoiceQuestionItem {
+  readonly id: string
+  readonly question: string
+  readonly header?: string
+  readonly options?: readonly { readonly label: string; readonly description?: string }[]
+  readonly multiSelect?: boolean
+  /** `plan-review` questions approve with the named option and take free text as feedback. */
+  readonly intent?: { readonly kind: 'plan-review'; readonly approve: string }
+}
+
+/** One spoken answer: selected option labels, or free text when no option matched. */
+export interface VoiceQuestionAnswer {
+  readonly id: string
+  readonly selected: readonly string[]
+  readonly custom?: string
+}
 
 /** Frames the Host sends to the agent job. */
 export type HostToAgent =
@@ -64,6 +88,17 @@ export type HostToAgent =
     readonly type: 'approval-done'
     readonly id: string
     readonly outcome: string
+  }
+  | {
+    /** The Agent asked the user something (ask_user_question or a plan review); the agent asks aloud and answers with `question-answer`. */
+    readonly type: 'question'
+    readonly id: string
+    readonly items: readonly VoiceQuestionItem[]
+  }
+  | {
+    /** The pending question set was answered elsewhere or withdrawn; stop asking. */
+    readonly type: 'question-done'
+    readonly id: string
   }
   | {
     /** The Session's permission preset changed (on screen or by voice); the agent answers "what mode am I in" from it. */

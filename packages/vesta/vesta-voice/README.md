@@ -28,10 +28,12 @@ While a room is bound the bridge is also the outermost `approval/request` answer
 | host → agent | `ready {sessionId, permission}` | bound; preset in effect |
 | host → agent | `speak {text}` / `status {tool}` / `done {reason}` | assistant text delta, tool call, turn end |
 | host → agent | `approval {id, tool, reason?}` / `approval-done {id, outcome}` | ask aloud; stop asking |
+| host → agent | `question {id, items}` / `question-done {id}` | ask_user_question or plan review aloud; stop asking |
+| agent → host | `question-answer {id, answers}` | spoken answers, one per item (selected labels or free text) |
 | host → agent | `permission {preset}` | the Session's preset changed (screen or voice) |
 | host → agent | `say {text}` / `error {message}` | host-initiated speech; refusal |
 
-The agent job owns speech: it turns `approval` into a spoken question, judges the next utterance as yes/no, and handles "stop" and "switch to … mode" before anything reaches the model.
+The agent job owns speech: it turns `approval` into a spoken question and judges the next utterance as yes/no; it reads `question` items one at a time (options spoken as "Options: A, B, or C", a plan review as "say approve or tell me what to change") and maps the reply to an option label, an ordinal, an approval, or free text; and it handles "stop", "switch to … mode" and "what mode am I in" before anything reaches the model. Questions race the on-screen card exactly like approvals (`user-questions/request`, outermost answerer, bridge-owned cancellation closes the card).
 
 ## Model Experience
 

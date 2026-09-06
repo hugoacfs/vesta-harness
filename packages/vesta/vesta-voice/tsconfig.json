@@ -39,6 +39,9 @@
       "path": "../../interaction/user-approval"
     },
     {
+      "path": "../../interaction/user-questions"
+    },
+    {
       "path": "../../llm/llm"
     },
     {

@@ -21,14 +21,16 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
+import type { AskUserQuestionAnswer } from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-user-questions'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { Config } from './index.ts'
 import { VOICE_SOURCE_PLUGIN, VOICE_TURN_NOTE } from './prompt.ts'
-import type { AgentToHost, HostToAgent } from './types.ts'
+import type { AgentToHost, HostToAgent, VoiceQuestionAnswer, VoiceQuestionItem } from './types.ts'
 
 /** One bound room: the socket, the Agent it drives, and what unwinds on close. */
 interface Binding {
@@ -40,6 +42,8 @@ interface Binding {
   restoreReasoning: { provider: string; model: string; reasoningEffort: string | undefined } | undefined
   /** Approval questions asked aloud and not yet settled, by bridge id. */
   readonly approvals: Map<string, PendingApproval>
+  /** Question sets (ask_user_question, plan reviews) asked aloud and not yet settled, by bridge id. */
+  readonly questions: Map<string, PendingQuestion>
 }
 
 /** One approval question in flight on the socket: the spoken answer settles it, `close` withdraws it. */
@@ -47,10 +51,16 @@ interface PendingApproval {
   readonly resolve: (outcome: ApprovalOutcome) => void
 }
 
+/** One question set in flight on the socket; a spoken answer set settles it. */
+interface PendingQuestion {
+  readonly resolve: (answer: AskUserQuestionAnswer) => void
+}
+
 type ApprovalRequest = Parameters<Events['approval/request']>[0]
+type QuestionRequest = Parameters<Events['user-questions/request']>[0]
 
 /** Requests this bridge re-dispatched with its own cancellation, skipped by the answerer on re-entry. */
-const derivedRequests = new WeakSet<ApprovalRequest>()
+const derivedRequests = new WeakSet<ApprovalRequest | QuestionRequest>()
 
 const BEARER = /^Bearer\s+(\S+)$/u
 
@@ -92,8 +102,27 @@ function parseFrame(raw: unknown): AgentToHost | undefined {
     return { type: 'approval-decision', id: frame.id, allow: frame.allow }
   }
   if (frame.type === 'permission' && typeof frame.preset === 'string') return { type: 'permission', preset: frame.preset }
+  if (frame.type === 'question-answer' && typeof frame.id === 'string') {
+    const answers = parseAnswers((parsed as { answers?: unknown }).answers)
+    if (answers !== undefined) return { type: 'question-answer', id: frame.id, answers }
+  }
   if (frame.type === 'ping') return { type: 'ping' }
   return undefined
+}
+
+/** Validate the wire answer list: every item names its question and lists selected labels. */
+function parseAnswers(raw: unknown): VoiceQuestionAnswer[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const answers: VoiceQuestionAnswer[] = []
+  for (const item of raw as unknown[]) {
+    if (typeof item !== 'object' || item === null) return undefined
+    const record = item as { id?: unknown; selected?: unknown; custom?: unknown }
+    if (typeof record.id !== 'string' || !Array.isArray(record.selected)) return undefined
+    if (!record.selected.every((label): label is string => typeof label === 'string')) return undefined
+    if (record.custom !== undefined && typeof record.custom !== 'string') return undefined
+    answers.push({ id: record.id, selected: record.selected, ...(record.custom === undefined ? {} : { custom: record.custom }) })
+  }
+  return answers
 }
 
 /** The bridge owner: one WebSocket server behind the upgrade route plus the live bindings. */
@@ -144,7 +173,7 @@ export class VoiceBridge {
 
   private bind(socket: WebSocket, sessionId: SessionId, agent: Agent): void {
     const binding: Binding = {
-      sessionId, agent, socket, disposers: [], restoreReasoning: undefined, approvals: new Map(),
+      sessionId, agent, socket, disposers: [], restoreReasoning: undefined, approvals: new Map(), questions: new Map(),
     }
     this.bindings.add(binding)
     const send = (frame: HostToAgent): void => {
@@ -178,6 +207,10 @@ export class VoiceBridge {
       if (request.agent !== agent || derivedRequests.has(request)) return next()
       return this.askAloud(binding, request, send)
     }, { prepend: true }))
+    binding.disposers.push(this.ctx.on('user-questions/request', (request, next) => {
+      if (request.agent !== agent || derivedRequests.has(request)) return next()
+      return this.askQuestionsAloud(binding, request, send)
+    }, { prepend: true }))
     socket.on('message', (raw) => {
       const frame = parseFrame(raw)
       if (frame === undefined) return
@@ -194,6 +227,15 @@ export class VoiceBridge {
         case 'permission':
           this.switchPermission(binding, frame.preset, send)
           break
+        case 'question-answer':
+          binding.questions.get(frame.id)?.resolve({
+            answers: frame.answers.map(answer => ({
+              id: answer.id,
+              selected: [...answer.selected],
+              ...(answer.custom === undefined ? {} : { custom: answer.custom }),
+            })),
+          })
+          break
         case 'ping':
           send({ type: 'pong' })
           break
@@ -209,6 +251,8 @@ export class VoiceBridge {
     if (!this.bindings.delete(binding)) return
     for (const pending of binding.approvals.values()) pending.resolve('unavailable')
     binding.approvals.clear()
+    // A spoken answer can no longer arrive; the on-screen answerer keeps the question.
+    binding.questions.clear()
     void this.restoreReasoning(binding)
     for (const dispose of binding.disposers.splice(0)) {
       try {
@@ -312,6 +356,56 @@ export class VoiceBridge {
       withdraw.abort(new Error(`vesta-voice: approval ${outcome}`))
       send({ type: 'approval-done', id, outcome })
       return outcome
+    })
+  }
+
+  /**
+   * Ask one question set aloud (ask_user_question, or a plan review carrying the
+   * `plan-review` intent) and race the spoken answers against the rest of the
+   * chain, exactly as {@link askAloud} does for approvals: a spoken answer set
+   * aborts the derived request so the on-screen card closes; an on-screen answer
+   * sends `question-done`; a chain that rejects (no browser attached) leaves the
+   * spoken path as the only channel until the asker's own signal aborts.
+   */
+  private askQuestionsAloud(
+    binding: Binding,
+    request: QuestionRequest,
+    send: (frame: HostToAgent) => void,
+  ): Promise<AskUserQuestionAnswer> {
+    const id = randomUUID()
+    const withdraw = new AbortController()
+    const signals = [withdraw.signal, ...(request.signal === undefined ? [] : [request.signal])]
+    const derived: QuestionRequest = { ...request, signal: AbortSignal.any(signals) }
+    derivedRequests.add(derived)
+    const spoken = new Promise<AskUserQuestionAnswer>((resolve) => {
+      binding.questions.set(id, { resolve })
+    })
+    const screen: Promise<AskUserQuestionAnswer> = Promise.resolve().then(() => this.ctx.waterfall(
+      scopeTarget(request.agent as NonNullable<QuestionRequest['agent']>, request.agent),
+      'user-questions/request', derived,
+      () => Promise.reject(new Error('vesta-voice: no on-screen answerer')),
+    )).catch(() => spoken)
+    const items: VoiceQuestionItem[] = request.questions.map(item => ({
+      id: item.id,
+      question: item.question,
+      ...(item.header === undefined ? {} : { header: item.header }),
+      ...(item.options === undefined
+        ? {}
+        : {
+          options: item.options.map(option => ({
+            label: option.label,
+            ...(option.description === undefined ? {} : { description: option.description }),
+          })),
+        }),
+      ...(item.multiSelect === undefined ? {} : { multiSelect: item.multiSelect }),
+      ...(item.intent === undefined ? {} : { intent: { kind: item.intent.kind, approve: item.intent.approve } }),
+    }))
+    send({ type: 'question', id, items })
+    return Promise.race([spoken, screen]).then((answer) => {
+      binding.questions.delete(id)
+      withdraw.abort(new Error('vesta-voice: question answered'))
+      send({ type: 'question-done', id })
+      return answer
     })
   }
 

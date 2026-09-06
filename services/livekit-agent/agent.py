@@ -246,6 +246,68 @@ def spoken_preset(preset: str) -> str:
     return _PRESET_SPOKEN.get(preset, f"{preset.replace('-', ' ')} mode")
 
 
+_APPROVE = re.compile(
+    r"^\W*(approve|approved|yes|yeah|yep|go ahead|looks good|ship it|do it|proceed|okay|ok|sure|fine)\b",
+    re.IGNORECASE)
+_ORDINALS = {"first": 0, "one": 0, "1": 0, "second": 1, "two": 1, "2": 1, "third": 2, "three": 2, "3": 2,
+             "fourth": 3, "four": 3, "4": 3, "fifth": 4, "five": 4, "5": 4, "sixth": 5, "six": 5, "6": 5, "last": -1}
+
+
+def _labels(item: dict[str, Any]) -> list[str]:
+    return [str(o.get("label", "")) for o in (item.get("options") or []) if o.get("label")]
+
+
+def question_prompt(item: dict[str, Any]) -> str:
+    """How one ask_user_question item (or a plan review) is spoken."""
+    intent = item.get("intent") or {}
+    if intent.get("kind") == "plan-review":
+        return "The plan is on screen. Say approve to go ahead, or tell me what to change."
+    q = str(item.get("question", "")).strip().rstrip(".")
+    if q and not q.endswith("?"):
+        q += "?"
+    labels = _labels(item)
+    if not labels:
+        return q
+    shown = labels[:6]
+    joiner = ", and " if item.get("multiSelect") else ", or "
+    opts = shown[0] if len(shown) == 1 else ", ".join(shown[:-1]) + joiner + shown[-1]
+    more = " There are more options on screen." if len(labels) > 6 else ""
+    return f"{q} Options: {opts}.{more}"
+
+
+def match_options(text: str, item: dict[str, Any]) -> list[str]:
+    """Option labels the utterance names, by label text or by ordinal ("the second one")."""
+    t = strip_perception(text).lower()
+    labels = _labels(item)
+    if not labels:
+        return []
+    hits = [label for label in labels if label.lower().strip() and (label.lower().strip() in t or (len(t) >= 3 and t in label.lower()))]
+    if not hits:
+        for w in re.findall(r"[a-z0-9]+", t):
+            if w in _ORDINALS:
+                idx = _ORDINALS[w]
+                if idx == -1:
+                    hits.append(labels[-1])
+                elif idx < len(labels):
+                    hits.append(labels[idx])
+                break
+    return hits if item.get("multiSelect") else hits[:1]
+
+
+def classify_answer(text: str, item: dict[str, Any]) -> dict[str, Any]:
+    """The wire answer for one item: selected labels, or the utterance as free text."""
+    raw = strip_perception(text)
+    intent = item.get("intent") or {}
+    if intent.get("kind") == "plan-review":
+        if _APPROVE.match(raw):
+            return {"id": item["id"], "selected": [str(intent.get("approve") or "Approve")]}
+        return {"id": item["id"], "selected": [], "custom": raw}
+    selected = match_options(raw, item)
+    if selected:
+        return {"id": item["id"], "selected": selected}
+    return {"id": item["id"], "selected": [], "custom": raw}
+
+
 def approval_question(tool: str, reason: str | None) -> str:
     """One spoken sentence for a Harness approval request."""
     name = f"The {tool.replace('_', ' ')} tool"
@@ -281,6 +343,8 @@ class DshBridge:
         self.session_id: str | None = None
         self.permission: str = "custom"
         self.pending_approval: dict[str, Any] | None = None
+        # ask_user_question / plan review in flight: items asked one at a time, answers collected
+        self.pending_question: dict[str, Any] | None = None
         self.closed = asyncio.Event()
 
     def attach(self, session: AgentSession) -> None:
@@ -328,12 +392,17 @@ class DshBridge:
                                      "reason": frame.get("reason")}
             question = approval_question(self.pending_approval["tool"], self.pending_approval["reason"])
             log.info("harness approval asked: %s", question)
-            if self._turn is not None:
-                # The open stream speaks the question and ends; the turn's later text is spoken passively.
-                self._turn.put_nowait({"type": "ask", "text": question})
-            else:
-                self._end_passive()
-                self._say(question)
+            self._ask(question)
+        elif kind == "question":
+            items = [i for i in (frame.get("items") or []) if isinstance(i, dict) and i.get("id")]
+            if items:
+                self.pending_question = {"id": str(frame.get("id")), "items": items, "index": 0, "answers": []}
+                log.info("harness question asked: %s", question_prompt(items[0]))
+                self._ask(question_prompt(items[0]))
+        elif kind == "question-done":
+            if self.pending_question is not None and self.pending_question["id"] == str(frame.get("id")):
+                log.info("harness question settled elsewhere")
+                self.pending_question = None
         elif kind == "approval-done":
             if self.pending_approval is not None and self.pending_approval["id"] == str(frame.get("id")):
                 log.info("harness approval settled: %s", frame.get("outcome"))
@@ -360,6 +429,15 @@ class DshBridge:
             log.info("harness tool: %s", frame.get("tool"))
         elif kind == "error":
             log.warning("harness error outside a turn: %s", frame.get("message"))
+
+    def _ask(self, text: str) -> None:
+        """Speak a question: through the open reply stream (which then ends so the next
+        utterance is judged as the answer) or, with no stream open, by itself."""
+        if self._turn is not None:
+            self._turn.put_nowait({"type": "ask", "text": text})
+        else:
+            self._end_passive()
+            self._say(text)
 
     def _say(self, text: str) -> None:
         if self._session is None or not text:
@@ -431,6 +509,23 @@ class DshBridge:
             return "There is nothing waiting for approval."
         await self._ws.send_json({"type": "approval-decision", "id": pending["id"], "allow": allow})
         return "Okay, going ahead." if allow else "Okay, denied."
+
+    async def answer_question(self, text: str) -> str:
+        """Record the spoken answer to the current item; ask the next item or send the set."""
+        pq = self.pending_question
+        if pq is None:
+            return "There is no question waiting."
+        item = pq["items"][pq["index"]]
+        pq["answers"].append(classify_answer(text, item))
+        pq["index"] += 1
+        if pq["index"] < len(pq["items"]):
+            return question_prompt(pq["items"][pq["index"]])
+        self.pending_question = None
+        if self._ws is None or self._ws.closed:
+            return "The call is not connected to the harness."
+        await self._ws.send_json({"type": "question-answer", "id": pq["id"], "answers": pq["answers"]})
+        last = pq["answers"][-1]
+        return "Okay." if last.get("selected") else "Okay, passing that on."
 
     async def request_permission(self, preset: str) -> str:
         if self._ws is None or self._ws.closed:
@@ -517,6 +612,9 @@ class DshBridgeStream(llm.LLMStream):
                 self._reply(request_id, "Say yes to allow it, or no to deny it. You can also answer on screen.")
             else:
                 self._reply(request_id, await self._bridge.decide(decision))
+            return
+        if self._bridge.pending_question is not None:
+            self._reply(request_id, await self._bridge.answer_question(text))
             return
         if is_stop(text):
             await self._bridge.interrupt()
