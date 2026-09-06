@@ -15,7 +15,9 @@ While a room is bound the bridge is also the outermost `approval/request` answer
 | `bridgePath` | `/vesta/voice/bridge` | upgrade path on the Host web server |
 | `mediaUrl` | absent | STT sidecar base URL for the perception toggle |
 | `tokenTtlSeconds` | `3600` | room token lifetime |
-| `roomPrefix` | `dsh-` | room name prefix before the Session id |
+| `roomPrefix` | `dsh-` | room name prefix before the Session id (`dshs-` on the staging instance) |
+| `agentName` | empty | LiveKit agent name added to the token as an explicit dispatch; empty leaves rooms on automatic dispatch (the vesta SFU ignores the claim; workers accept rooms by prefix instead) |
+| `warmupOnBind` | `true` | on bind, submit the greeting turn that warms the request prefix (a plugin-sourced message, so it never titles the Session) |
 
 ## Wire frames
 

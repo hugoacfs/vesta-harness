@@ -11,10 +11,10 @@ This runbook covers the harness only. The server it runs on (stacks, ports, GPUs
 | What | Where |
 |---|---|
 | Source checkout | `~/code/vesta-harness` (origin `hugoacfs/vesta-harness`, upstream `deepseek-ai/deepseek-harness`) |
-| Harness home | `~/.vesta-harness` — `profiles/vesta/`, `settings.yaml`, `.credentials.yaml` (chmod 600), `.agent-presets/vesta-orch/` |
+| Harness home | `~/.vesta-harness` — `profiles/vesta/`, `settings.yaml`, `.credentials.yaml` (chmod 600), `.agent-presets/{vesta-orch,vesta-voice}/` |
 | Service | systemd `--user` unit `vesta-harness` → `node apps/cli/lib/bin.js --profile vesta --host 127.0.0.1 --port 3081 --trusted-host vesta.tail22b555.ts.net --no-open` |
-| Tailnet URL | `https://vesta.tail22b555.ts.net:8790` (tailscale serve → `127.0.0.1:3081`); nginx `/dsh` redirects there; `:8791` was the side-by-side port before cutover and is off |
-| Templates | this directory: `profiles/vesta/*`, `settings.yaml`, `agent-presets/vesta-orch/*`, `vesta-harness.service` |
+| Tailnet URL | `https://vesta.tail22b555.ts.net:8790` (tailscale serve → `127.0.0.1:3081`); nginx `/dsh` redirects there. `:8791` → the rc.7 install (`dsh-web`, `127.0.0.1:3080`, re-enabled for its four unmigrated subagent sessions); `:8792` → the staging instance (`127.0.0.1:3082`, see below) |
+| Templates | this directory: `profiles/vesta/*`, `settings.yaml`, `agent-presets/{vesta-orch,vesta-voice}/*`, `vesta-harness.service`, `vesta-harness-staging.service`, `staging-cordis.patch.yml`, `fillers.yaml`, `livekit-voice.docker-compose.yml`, `moshi-server.docker-compose.yaml`, `bin/*` |
 
 ## Prerequisites (once)
 
@@ -75,7 +75,7 @@ vesta-url    # prints https://vesta.tail22b555.ts.net:8790/?token=… for the ru
 
 ## Voice (Phase A)
 
-The LiveKit stack stays in `/srv/ai/compose/livekit-voice`; its compose file is versioned here as `livekit-voice.docker-compose.yml`, and both voice services build from this checkout: the agent worker `services/livekit-agent` and the SenseVoice STT sidecar `services/livekit-media`. The standalone voice UI (`livekit-webui`, `:8480`) and its frontend are retired behind the compose profile `legacy` (stopped, image kept); `docker compose --profile legacy up -d livekit-webui` plus `tailscale serve --bg --https=8480 http://127.0.0.1:3010` bring the old page back. The Harness needs the LiveKit credentials as references:
+The LiveKit stack stays in `/srv/ai/compose/livekit-voice`; its compose file is versioned here as `livekit-voice.docker-compose.yml`, and both voice services build from this checkout: the agent worker `services/livekit-agent` and the media sidecar `services/livekit-media` (SenseVoice tone notes + the Whisper second pass); the streaming voice server is `services/moshi-server` (its own compose project, see below). The standalone voice UI (`livekit-webui`, `:8480`) and its frontend are retired behind the compose profile `legacy` (stopped, image kept); `docker compose --profile legacy up -d livekit-webui` plus `tailscale serve --bg --https=8480 http://127.0.0.1:3010` bring the old page back. The Harness needs the LiveKit credentials as references:
 
 ```bash
 python3 -c "env=dict(l.rstrip('\n').split('=',1) for l in open('/srv/ai/compose/livekit-voice/.env') if '=' in l and not l.startswith('#')); p='/home/hugo/.vesta-harness/.credentials.yaml'; t=open(p).read(); t=t if 'LIVEKIT_API_KEY' in t else t.replace('refs:\n','refs:\n  LIVEKIT_API_KEY: %s\n  LIVEKIT_API_SECRET: %s\n'%(env['LIVEKIT_API_KEY'],env['LIVEKIT_API_SECRET']),1); open(p,'w').write(t)"
@@ -150,7 +150,7 @@ Scripted check from the agent container (WAVs made with the TTS sidecar; `settle
 docker cp ~/code/vesta-harness/deploy/vesta/bin/vesta-call-check livekit-agent:/tmp/call-check.py && docker exec livekit-agent python -u /tmp/call-check.py session-<uuid> /tmp/safe.wav,/tmp/mkfile.wav,/tmp/yes.wav 75 45
 ```
 
-Make the WAVs with the TTS sidecar, e.g. `curl -s -o /tmp/yes.wav http://127.0.0.1:8010/v1/audio/speech -H 'Content-Type: application/json' -d '{"model":"kyutai/tts-1.6b-en_fr","input":"Yes, go ahead.","voice":"expresso/ex03-ex01_calm_001_channel1_1143s.wav","response_format":"wav"}'` and `docker cp` them into the container. Plugin logger lines do not reach the journal (only the startup URL does); use the agent container's log and the session log for evidence.
+Make the WAVs with the streaming voice server: `docker exec livekit-agent python /tmp/say.py "Yes, go ahead." /tmp/yes.wav` (`say.py` is kept in `/srv/ai/compose/livekit-voice/probes/`, next to the probe WAVs; `docker cp` both into the container after a rebuild). The old sidecar route (`127.0.0.1:8010/v1/audio/speech`) only works with the parked `kyutai-tts` project started. Plugin logger lines do not reach the journal (only the startup URL does); use the agent container's log and the session log for evidence.
 
 ## CLI smoke check (no browser)
 
