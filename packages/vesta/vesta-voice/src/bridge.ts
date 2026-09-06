@@ -22,6 +22,7 @@ import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/t
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import type { AskUserQuestionAnswer } from '@deepseek-ai/dsh-user-questions'
+import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-permission-presets'
@@ -274,17 +275,18 @@ export class VoiceBridge {
 
   /**
    * Submit the greeting turn that warms the request prefix. Best-effort: a
-   * refusal (a busy Agent, a prompt error) only forgoes the warm greeting, and
-   * the agent job's fixed line still covers the connect moment.
+   * refusal (a closed Agent) only forgoes the warm greeting, and the agent
+   * job's fixed line still covers the connect moment. The message carries the
+   * plugin source, not the user's: it renders as an injection rather than as
+   * something the caller said, and the automatic title skips it, so a Session
+   * that starts with a call is named after the first thing actually spoken.
    */
   private async warmup(binding: Binding): Promise<void> {
     try {
-      await this.ctx.sessionController.prompt({
-        requestId: brandString<SessionRequestId>(randomUUID()),
-        sessionId: binding.sessionId,
-        mode: 'queue',
+      binding.agent.followup(createUserMessage({
         content: [{ type: 'text', text: VOICE_WARMUP }],
-      }, new AbortController().signal)
+        source: { kind: 'plugin', plugin: VOICE_SOURCE_PLUGIN },
+      }))
     } catch (error) {
       this.ctx.logger.info(`vesta-voice: warm-up greeting skipped for ${String(binding.sessionId)}: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -321,7 +323,17 @@ export class VoiceBridge {
    * `off` effort keeps its current selection (logged, not fatal).
    */
   private async quietReasoning(binding: Binding): Promise<void> {
-    const { provider, model, reasoningEffort } = binding.agent.options
+    const options = binding.agent.options
+    // A Session that has never chosen a model runs on the default selection: that is
+    // what the greeting would think with, and what the call hands back at the end.
+    const fallback = options.provider === undefined || options.model === undefined
+      ? this.ctx.get('agentDefaultModel')?.currentSelection()
+      : undefined
+    const provider = options.provider ?? fallback?.provider
+    const model = options.model ?? fallback?.model
+    const reasoningEffort = fallback === undefined
+      ? options.reasoningEffort
+      : fallback.reasoningEffort === undefined ? undefined : String(fallback.reasoningEffort)
     if (provider === undefined || model === undefined || reasoningEffort === 'off') return
     try {
       await this.ctx.sessionController.selectModel({
