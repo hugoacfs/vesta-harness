@@ -50,7 +50,7 @@ PAUSE_THRESHOLD = float(os.environ.get("KYUTAI_PAUSE_THRESHOLD", "0.5"))
 # word of an utterance was seen 0.8 s after the pause prediction), so a pause can fire before
 # the last word arrives: finalize this long after the pause, or after the latest word,
 # whichever is later.
-PAUSE_GRACE_S = float(os.environ.get("KYUTAI_PAUSE_GRACE_S", "1.0"))
+PAUSE_GRACE_S = float(os.environ.get("KYUTAI_PAUSE_GRACE_S", "0.9"))
 # Fallback: finalize this long after the last word if the pause head never fires.
 FINAL_AFTER_SILENCE_S = float(os.environ.get("KYUTAI_FINAL_AFTER_SILENCE_S", "1.2"))
 # Audio is sent in chunks of this many samples (80 ms = one mimi frame).

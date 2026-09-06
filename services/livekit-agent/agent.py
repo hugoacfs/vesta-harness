@@ -83,7 +83,8 @@ PROGRESS_INTERVAL_S = float(os.environ.get("DSH_PROGRESS_INTERVAL_S", "25"))
 PROGRESS_PHRASES = [p.strip() for p in os.environ.get("DSH_PROGRESS_PHRASES", "Still on it.|Working on it.|Almost there.").split("|") if p.strip()]
 # Turn-taking: how long after you stop before the agent takes the turn, and how long you must
 # speak over it before it yields. LiveKit defaults are 0.5 / 6.0 / 0.5.
-MIN_ENDPOINTING_S = float(os.environ.get("MIN_ENDPOINTING_S", "0.4"))
+# The streaming STT's pause prediction already implies a pause, so its default endpointing wait is shorter.
+MIN_ENDPOINTING_S = float(os.environ.get("MIN_ENDPOINTING_S", "0.25" if STT_BACKEND == "moshi" else "0.4"))
 MAX_ENDPOINTING_S = float(os.environ.get("MAX_ENDPOINTING_S", "3.0"))
 MIN_INTERRUPTION_S = float(os.environ.get("MIN_INTERRUPTION_S", "0.4"))
 
