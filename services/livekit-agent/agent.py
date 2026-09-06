@@ -32,6 +32,7 @@ from typing import Any
 
 import aiohttp
 import httpx
+from livekit import rtc
 from livekit.agents import (
     Agent,
     AgentSession,
@@ -717,6 +718,50 @@ class Assistant(Agent):
             super().__init__(instructions=SYSTEM_PROMPT, tools=[web_search])
 
 
+_CALLER_KINDS = (rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD, rtc.ParticipantKind.PARTICIPANT_KIND_SIP)
+
+
+def _follow_callers(ctx: JobContext, session: AgentSession) -> None:
+    """Keep the session's audio linked to whoever is calling.
+
+    RoomIO links the first participant and from then on only ever re-links that same
+    identity; when the caller drops and comes back under another identity, the room keeps an
+    agent that hears nothing (a call on 2026-09-06 went through nine such re-joins). The
+    browser now mints one identity per Session, so plain re-joins re-link natively; this
+    follows everything else: a token from an older build, or a second device after the first
+    one has left.
+    """
+    room_io = session.room_io
+    if room_io is None:
+        return
+    linked: str | None = room_io.linked_participant.identity if room_io.linked_participant else None
+
+    def link(participant: rtc.RemoteParticipant) -> None:
+        nonlocal linked
+        if participant.identity != linked:
+            log.info("linking caller %s (previous %s)", participant.identity, linked)
+        room_io.set_participant(participant.identity)
+        linked = participant.identity
+
+    def on_connected(participant: rtc.RemoteParticipant) -> None:
+        if participant.kind not in _CALLER_KINDS:
+            return
+        current = room_io.linked_participant
+        if current is None or current.identity == participant.identity:
+            link(participant)
+
+    def on_disconnected(participant: rtc.RemoteParticipant) -> None:
+        if participant.identity != linked:
+            return
+        for other in ctx.room.remote_participants.values():
+            if other.kind in _CALLER_KINDS and other.identity != participant.identity:
+                link(other)
+                return
+
+    ctx.room.on("participant_connected", on_connected)
+    ctx.room.on("participant_disconnected", on_disconnected)
+
+
 async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
     room = ctx.room.name or ""
@@ -781,13 +826,13 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     # Keep the agent alive across browser reconnects: the default closes the
     # session when the linked participant drops, which left later joins of the
-    # same room with no agent at all. RoomIO re-links the next participant; the
-    # job ends when LiveKit closes the empty room.
+    # same room with no agent at all. The job ends when LiveKit closes the room.
     await session.start(
         agent=Assistant(bridged=bridge is not None),
         room=ctx.room,
         room_input_options=RoomInputOptions(close_on_disconnect=False),
     )
+    _follow_callers(ctx, session)
     if bridge is not None:
         bridge.attach(session)   # passive speech and approval questions need the running session
     greeting = BRIDGE_GREETING if bridge is not None else GREETING

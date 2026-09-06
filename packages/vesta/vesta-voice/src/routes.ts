@@ -3,7 +3,6 @@
  * LiveKit room token for the Session the browser is looking at, and the
  * perception ("hide emotions") toggle proxied to the STT sidecar.
  */
-import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-credentials'
@@ -69,7 +68,10 @@ async function tokenResponse(ctx: Context, config: Config, request: Request): Pr
   }
   const roomName = `${config.roomPrefix}${sessionId}`
   const token = new AccessToken(key.value, secret.value, {
-    identity: `user-${randomUUID().slice(0, 8)}`,
+    // One identity per Session: the agent pins itself to the first caller identity and only
+    // ever re-links that one, so a re-join (or a second tab, which replaces the first) must
+    // present the same name.
+    identity: `user-${sessionId.replace(/^session-/u, '')}`,
     name: 'You',
     ttl: config.tokenTtlSeconds,
   })

@@ -270,6 +270,14 @@ class KyutaiSTT(stt.STT):
         return m.group(0) if m else None
 
 
+# moshi-server drops an ASR socket that has carried no message for 120 s (batched_asr.rs,
+# long_timeout). A muted microphone or a caller who left and came back used to hit that, and
+# the dead socket then took the recognition pump down for the rest of the call: send a frame of
+# silence whenever the room has been quiet this long, and reopen the socket after any drop.
+STT_KEEPALIVE_S = float(os.environ.get("KYUTAI_STT_KEEPALIVE_S", "20"))
+_SILENCE_CHUNK = [0.0] * STT_CHUNK
+
+
 class KyutaiRecognizeStream(stt.RecognizeStream):
     def __init__(self, *, stt: KyutaiSTT, conn_options: APIConnectOptions, language: str) -> None:
         super().__init__(stt=stt, conn_options=conn_options, sample_rate=SAMPLE_RATE)
@@ -281,6 +289,7 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         self._utterance_start = 0.0
         self._pause_at: float | None = None   # when the pause head fired for the current utterance
         self._audio: list[np.ndarray] = []   # the utterance so far, for the tone lookup
+        self._input_done = False             # the framework closed the input: no reconnects after this
 
     def _emit(self, kind: stt.SpeechEventType, text: str = "") -> None:
         ev = stt.SpeechEvent(type=kind, request_id="", alternatives=[stt.SpeechData(language=self._language, text=text)] if text or kind in (stt.SpeechEventType.INTERIM_TRANSCRIPT, stt.SpeechEventType.FINAL_TRANSCRIPT) else [])
@@ -306,17 +315,47 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
             asyncio.get_running_loop().create_task(_tone())
 
     async def _run(self) -> None:
+        """One recognition stream for the life of the call: the socket to moshi-server is
+        reopened after any drop, so the framework never sees a dead pump."""
+        attempt = 0
+        while not self._input_done:
+            try:
+                await self._session()
+            except (websockets.exceptions.WebSocketException, OSError, APIConnectionError, APIError) as e:
+                if self._input_done:
+                    return
+                attempt += 1
+                delay = min(5.0, 0.5 * attempt)
+                log.warning("kyutai stt: connection lost (%s); reopening in %.1fs", e, delay)
+                self._finalize("reconnect")
+                await asyncio.sleep(delay)
+                continue
+            if not self._input_done:
+                attempt = 0
+                log.info("kyutai stt: server closed the stream; reopening")
+                await asyncio.sleep(0.2)
+
+    async def _session(self) -> None:
         url = f"{self._kyutai._url}/api/asr-streaming"
         try:
-            ws = await websockets.connect(url, additional_headers=_headers(self._kyutai._api_key), max_size=None)
+            ws = await websockets.connect(url, additional_headers=_headers(self._kyutai._api_key), max_size=None, open_timeout=10)
         except Exception as e:  # noqa: BLE001
             raise APIConnectionError(f"kyutai stt connect failed: {e}") from e
         async with ws:
             pending = np.zeros(0, dtype=np.float32)
+            frames = self._input_ch.__aiter__()
 
             async def send() -> None:
                 nonlocal pending
-                async for item in self._input_ch:
+                while True:
+                    try:
+                        item = await asyncio.wait_for(frames.__anext__(), timeout=STT_KEEPALIVE_S)
+                    except asyncio.TimeoutError:
+                        # Nothing from the room (muted, or the caller is away): keep the slot alive.
+                        await ws.send(msgpack.packb({"type": "Audio", "pcm": _SILENCE_CHUNK}, use_single_float=True))
+                        continue
+                    except StopAsyncIteration:
+                        break
                     if isinstance(item, self._FlushSentinel):
                         # The framework's VAD saw the end of speech: finalize what we have.
                         self._finalize("vad")
@@ -336,6 +375,7 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                 # input ended: flush the remainder and finalize
                 if len(pending):
                     await ws.send(msgpack.packb({"type": "Audio", "pcm": pending.tolist()}, use_single_float=True))
+                self._input_done = True
                 self._finalize("end")
 
             async def recv() -> None:
@@ -373,7 +413,9 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
 
             tasks = [asyncio.create_task(send()), asyncio.create_task(recv()), asyncio.create_task(watchdog())]
             try:
-                done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+                # The first task to finish decides: send() ends with the input (done), recv()
+                # ends with the socket (reopen), and an exception from either is re-raised.
+                done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                 for t in done:
                     t.result()
             finally:
