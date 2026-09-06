@@ -377,9 +377,11 @@ class DshBridge:
         mid-audio (the caller then falls back to words, or stays quiet)."""
         library = getattr(self, "_fillers", None)
         if library is None or self._session is None:
+            log.info("filler %s skipped: %s", category, "no library" if library is None else "no session")
             return False
         picked = library.pick(category)
         if picked is None:
+            log.info("filler %s skipped: no rendered line short enough", category)
             return False
         phrase, pcm = picked
         tts_engine = getattr(self, "_tts", None)
@@ -387,6 +389,8 @@ class DshBridge:
             log.info("filler %s (in reply): %r", category, phrase)
             return True
         if self._turn is not None:
+            log.info("filler %s skipped: reply stream %s", category,
+                     "not open yet" if getattr(tts_engine, "_active", None) is None else "mid-audio")
             return False   # a reply is speaking; a clip on top of it would collide
         try:
             self._session.say(phrase, audio=library.frames(pcm), add_to_chat_ctx=False)
@@ -686,6 +690,7 @@ class DshBridgeStream(llm.LLMStream):
         progress_index = 0
         think_at = last_speech_at + FILLER_THINK_AFTER_S
         thought = not FILLERS
+        spoken_text = ""
         try:
             while True:
                 now = time.monotonic()
@@ -716,11 +721,14 @@ class DshBridgeStream(llm.LLMStream):
                         if piece.strip():
                             spoken_any = True
                             last_speech_at = time.monotonic()
+                            if len(spoken_text) < 200:
+                                spoken_text += piece
                 elif kind == "done":
                     tail = spoken.flush()
                     if tail:
                         self._event_ch.send_nowait(llm.ChatChunk(
                             id=request_id, delta=llm.ChoiceDelta(role="assistant", content=tail)))
+                    log.info("harness turn done: tools=%s spoken=%r", tool_active, (spoken_text + tail)[:120])
                     break
                 elif kind == "ask":
                     # An approval question: speak it and close this stream so the
