@@ -77,9 +77,12 @@ MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "5"))
 
 # Vesta Harness bridge. Empty URL = direct mode for every room.
 DSH_BRIDGE_URL = os.environ.get("DSH_BRIDGE_URL", "").strip()
-# Registered agent name: rooms reach this worker only through an explicit dispatch naming it
-# (the Harness token route and vesta-call-check add one), never by automatic dispatch.
-AGENT_NAME = os.environ.get("AGENT_NAME", "vesta").strip()
+# Registered agent name. Empty (the default) = an unnamed worker on automatic dispatch, which is
+# what the vesta SFU (livekit-server 1.13) actually honours: it ignored the token's named
+# dispatch and looked for an unnamed worker. Two Harnesses therefore share automatic dispatch and
+# each worker accepts only the rooms of its own prefix (see accept_room); a rejected job is
+# offered to the other worker.
+AGENT_NAME = os.environ.get("AGENT_NAME", "").strip()
 DSH_BRIDGE_SECRET = os.environ.get("DSH_BRIDGE_SECRET") or os.environ.get("LIVEKIT_API_SECRET", "")
 DSH_ROOM_PREFIX = os.environ.get("DSH_ROOM_PREFIX", "dsh-")
 GREETING = os.environ.get("GREETING", "")                       # spoken once on join when set
@@ -826,6 +829,18 @@ def _follow_callers(ctx: JobContext, session: AgentSession) -> None:
     ctx.room.on("participant_disconnected", on_disconnected)
 
 
+async def accept_room(request: Any) -> None:
+    """Take the job only for rooms of this deployment's prefix (`dsh-` production, `dshs-`
+    staging); a worker in direct mode (no bridge) takes everything. The SFU re-offers a
+    rejected job to the other worker."""
+    name = request.room.name or ""
+    if not DSH_BRIDGE_URL or name.startswith(DSH_ROOM_PREFIX):
+        await request.accept()
+        return
+    log.info("declining room %s (this worker serves %s* rooms)", name, DSH_ROOM_PREFIX)
+    await request.reject()
+
+
 def prewarm(proc: JobProcess) -> None:
     """Once per job process, before any call: the VAD, and the filler clips (rendered into
     the cache dir the first time a voice is seen, read from it afterwards)."""
@@ -941,4 +956,4 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, agent_name=AGENT_NAME))
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, request_fnc=accept_room, agent_name=AGENT_NAME))

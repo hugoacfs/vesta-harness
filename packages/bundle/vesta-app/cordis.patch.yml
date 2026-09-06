@@ -45,7 +45,6 @@
       config:
         livekitUrl: wss://vesta.tail22b555.ts.net:8481
         mediaUrl: http://127.0.0.1:8011
-        agentName: vesta          # the production worker (AGENT_NAME in livekit-voice compose); staging overrides in its home patch
 
     # ── host: vesta MCP servers ─────────────────────────────────────────────
     - id: mcp-vesta-memory

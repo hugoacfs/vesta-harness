@@ -81,7 +81,7 @@ services:
       - TTS_SPEED=1.2
       - DSH_BRIDGE_URL=ws://127.0.0.1:3081/vesta/voice/bridge   # unset = direct mode for every room
       - DSH_ROOM_PREFIX=dsh-
-      - AGENT_NAME=vesta                    # named worker: rooms reach it only by the Harness token's dispatch (vesta-voice agentName)
+      - AGENT_NAME=                         # unnamed worker on automatic dispatch; it accepts only DSH_ROOM_PREFIX rooms (the SFU ignores named dispatch by token)
       - GREETING=Hi, I'm Vesta. How can I help you today?
       # Bridge mode greets by warming the model prefix (vesta-voice warmupOnBind), whose
       # spoken reply is the greeting; leave BRIDGE_GREETING empty so the agent adds none.
@@ -126,8 +126,8 @@ services:
       - TTS_VOICE=expresso/ex03-ex01_calm_001_channel1_1143s.wav
       - TTS_SPEED=1.2
       - DSH_BRIDGE_URL=ws://127.0.0.1:3082/vesta/voice/bridge
-      - DSH_ROOM_PREFIX=dshs-
-      - AGENT_NAME=vesta-staging
+      - DSH_ROOM_PREFIX=dshs-               # this worker accepts only dshs-* rooms; production's only dsh-*
+      - AGENT_NAME=
       - GREETING=Hi, I'm Vesta staging. How can I help you today?
       - TTS_BACKEND=moshi
       - STT_BACKEND=moshi

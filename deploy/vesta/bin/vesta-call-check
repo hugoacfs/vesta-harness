@@ -36,13 +36,16 @@ PREFIX = "dsh-"
 
 
 def token(room: str) -> str:
-    return (
+    t = (
         api.AccessToken()  # LIVEKIT_API_KEY / LIVEKIT_API_SECRET from the environment
         .with_identity(f"probe-{int(time.time()) % 100000}")
         .with_name("Probe")
         .with_grants(api.VideoGrants(room_join=True, room=room, can_publish=True, can_subscribe=True))
-        .to_jwt()
     )
+    if AGENT_NAME:
+        # only for an SFU that honours dispatch by token; the vesta one does not (see agent.py)
+        t = t.with_room_config(api.RoomConfiguration(agents=[api.RoomAgentDispatch(agent_name=AGENT_NAME)]))
+    return t.to_jwt()
 
 
 async def play(source: rtc.AudioSource, path: str, lock: asyncio.Lock) -> None:

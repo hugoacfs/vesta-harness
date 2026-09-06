@@ -83,10 +83,13 @@ async function tokenResponse(ctx: Context, config: Config, request: Request): Pr
     canSubscribe: true,
     canPublishData: true,
   })
-  // Explicit dispatch to this deployment's worker: a named agent receives no
-  // automatic dispatch, so a room created by this Host never lands on another
-  // Harness's worker (staging beside production) and the reverse.
-  token.roomConfig = new RoomConfiguration({ agents: [new RoomAgentDispatch({ agentName: config.agentName })] })
+  // Explicit dispatch to a named worker, when the deployment uses one. The vesta
+  // SFU (livekit-server 1.13) ignored this claim and kept looking for an unnamed
+  // worker, so production runs unnamed workers that accept rooms by prefix
+  // instead; the claim stays available for an SFU that honours it.
+  if (config.agentName.length > 0) {
+    token.roomConfig = new RoomConfiguration({ agents: [new RoomAgentDispatch({ agentName: config.agentName })] })
+  }
   return Response.json({ serverUrl: config.livekitUrl, roomName, token: await token.toJwt() })
 }
 

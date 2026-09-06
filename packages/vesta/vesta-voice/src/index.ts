@@ -38,9 +38,9 @@ export interface Config {
   /** Room name prefix before the Session id. @default 'dsh-' */
   roomPrefix: string
   /**
-   * LiveKit agent name the room token dispatches to. The voice worker registers
-   * under this name, so a second Harness (staging) with its own worker never
-   * receives production rooms and vice versa. @default 'vesta'
+   * LiveKit agent name the room token dispatches to, for an SFU that honours
+   * dispatch by token; empty (the default) leaves rooms on automatic dispatch,
+   * where each worker accepts only the rooms of its own `roomPrefix`. @default ''
    */
   agentName: string
   /**
@@ -60,7 +60,7 @@ export const Config: z<Config> = z.object({
   mediaUrl: z.string(),
   tokenTtlSeconds: z.natural().min(60).default(3600),
   roomPrefix: z.string().default('dsh-'),
-  agentName: z.string().default('vesta'),
+  agentName: z.string().default(''),
   warmupOnBind: z.boolean().default(true),
 })
 
