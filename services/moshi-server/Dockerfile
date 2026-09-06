@@ -24,7 +24,7 @@ RUN mkdir -p moshi-server && cd moshi-server \
     && uv sync --locked
 
 # CUDA kernels for the 3060 (sm_86); the GPU is not visible at build time.
-ENV CUDA_COMPUTE=86
+ENV CUDA_COMPUTE_CAP=86
 ARG MOSHI_SERVER_VERSION=0.6.4
 RUN cd moshi-server \
     && export LD_LIBRARY_PATH="$(uv run python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')" \
