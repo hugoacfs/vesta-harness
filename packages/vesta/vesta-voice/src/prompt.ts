@@ -2,6 +2,18 @@
 export const VOICE_SOURCE_PLUGIN = 'vesta-voice'
 
 /**
+ * The instruction submitted once when a call binds. Its spoken reply greets
+ * the caller, and running it drives the whole request prefix (system prompt +
+ * tool schemas) through the model before the first real utterance, so that
+ * prefix is warm in the provider's cache and the first spoken turn skips the
+ * cold prefill. A short, tool-free instruction keeps the warm-up itself fast.
+ */
+export const VOICE_WARMUP = [
+  'You have just answered a live voice call. Greet the caller in one short spoken sentence',
+  '(for example "Hi, I\'m here — what can I do?"). Do not use any tools for this greeting.',
+].join(' ')
+
+/**
  * The per-turn spoken-mode note. Injected as model-facing context right
  * before each spoken turn enters the Session, so the request prefix (system
  * prompt + history) stays cache-stable across call start and end; typed turns

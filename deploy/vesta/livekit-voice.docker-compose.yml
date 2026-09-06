@@ -75,7 +75,10 @@ services:
       - DSH_BRIDGE_URL=ws://127.0.0.1:3081/vesta/voice/bridge   # unset = direct mode for every room
       - DSH_ROOM_PREFIX=dsh-
       - GREETING=Hi, I'm Vesta. How can I help you today?
-      - BRIDGE_GREETING=Hi, I'm listening.
+      # Bridge mode greets by warming the model prefix (vesta-voice warmupOnBind), whose
+      # spoken reply is the greeting; leave BRIDGE_GREETING empty so the agent adds none.
+      # Set it (and vesta-voice warmupOnBind:false) to greet with a fixed line and skip warming.
+      - BRIDGE_GREETING=
     depends_on: [livekit-server, livekit-media]
 
   # Next.js UI (LiveKit agent-starter-react, rebranded). Stopped; kept as a rollback.

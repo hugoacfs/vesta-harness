@@ -41,7 +41,7 @@ Each spoken turn adds one injected user-role context (`VOICE_TURN_NOTE`, ~90 wor
 
 #### KV Cache effect
 
-The system prompt is untouched by a call; the per-turn note appends to history, and the reasoning switch changes only request parameters, so the cached prefix survives call start and end.
+The system prompt is untouched by a call; the per-turn note appends to history, and the reasoning switch changes only request parameters, so the cached prefix survives call start and end. On bind, `warmupOnBind` submits a greeting turn whose only job besides greeting the caller is to run the request prefix through the model so the provider caches it before the first real utterance; the first spoken turn then reuses the warm prefix instead of paying a cold prefill.
 
 ## Known Limitations and Deferred Work
 

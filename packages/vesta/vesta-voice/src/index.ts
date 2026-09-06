@@ -37,6 +37,12 @@ export interface Config {
   tokenTtlSeconds: number
   /** Room name prefix before the Session id. @default 'dsh-' */
   roomPrefix: string
+  /**
+   * On bind, submit a greeting turn that also warms the request prefix in the
+   * model cache; its spoken reply greets the caller. Empty disables warming and
+   * leaves the greeting to the agent job's fixed line. @default true
+   */
+  warmupOnBind: boolean
 }
 
 /** Validate the voice bridge configuration. */
@@ -48,6 +54,7 @@ export const Config: z<Config> = z.object({
   mediaUrl: z.string(),
   tokenTtlSeconds: z.natural().min(60).default(3600),
   roomPrefix: z.string().default('dsh-'),
+  warmupOnBind: z.boolean().default(true),
 })
 
 /**

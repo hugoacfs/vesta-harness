@@ -29,7 +29,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { Config } from './index.ts'
-import { VOICE_SOURCE_PLUGIN, VOICE_TURN_NOTE } from './prompt.ts'
+import { VOICE_SOURCE_PLUGIN, VOICE_TURN_NOTE, VOICE_WARMUP } from './prompt.ts'
 import type { AgentToHost, HostToAgent, VoiceQuestionAnswer, VoiceQuestionItem } from './types.ts'
 
 /** One bound room: the socket, the Agent it drives, and what unwinds on close. */
@@ -245,6 +245,9 @@ export class VoiceBridge {
     socket.once('close', () => { this.unbind(binding) })
     send({ type: 'ready', sessionId: String(sessionId), permission: this.currentPermission(binding) })
     this.ctx.logger.info(`vesta-voice: room bound to session ${String(sessionId)}`)
+    // The greeting turn runs the request prefix through the model now, so the
+    // first real utterance reuses a warm cache instead of paying a cold prefill.
+    if (this.config.warmupOnBind && agent.status !== 'running') void this.warmup(binding)
   }
 
   private unbind(binding: Binding, code?: number, reason?: string): void {
@@ -263,6 +266,24 @@ export class VoiceBridge {
     }
     if (code !== undefined && binding.socket.readyState === binding.socket.OPEN) binding.socket.close(code, reason)
     this.ctx.logger.info(`vesta-voice: room unbound from session ${String(binding.sessionId)}`)
+  }
+
+  /**
+   * Submit the greeting turn that warms the request prefix. Best-effort: a
+   * refusal (a busy Agent, a prompt error) only forgoes the warm greeting, and
+   * the agent job's fixed line still covers the connect moment.
+   */
+  private async warmup(binding: Binding): Promise<void> {
+    try {
+      await this.ctx.sessionController.prompt({
+        requestId: brandString<SessionRequestId>(randomUUID()),
+        sessionId: binding.sessionId,
+        mode: 'queue',
+        content: [{ type: 'text', text: VOICE_WARMUP }],
+      }, new AbortController().signal)
+    } catch (error) {
+      this.ctx.logger.info(`vesta-voice: warm-up greeting skipped for ${String(binding.sessionId)}: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /** A finished utterance: steer a running Agent, otherwise queue a new turn. */
