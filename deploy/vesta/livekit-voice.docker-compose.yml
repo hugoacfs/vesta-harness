@@ -78,6 +78,13 @@ services:
       # Bridge mode greets by warming the model prefix (vesta-voice warmupOnBind), whose
       # spoken reply is the greeting; leave BRIDGE_GREETING empty so the agent adds none.
       # Set it (and vesta-voice warmupOnBind:false) to greet with a fixed line and skip warming.
+      # Voice backends: moshi = Kyutai moshi-server (streaming, /srv/ai/compose/moshi-server);
+      # openai/sensevoice = the batch sidecars. See deploy/vesta/README.md "Streaming voice server".
+      - TTS_BACKEND=openai
+      - STT_BACKEND=sensevoice
+      - KYUTAI_WS_URL=ws://127.0.0.1:8090
+      - KYUTAI_PAUSE_HEAD=1
+      - TONE_NOTES=1
       - BRIDGE_GREETING=
     depends_on: [livekit-server, livekit-media]
 
