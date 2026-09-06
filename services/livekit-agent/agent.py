@@ -77,6 +77,9 @@ MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "5"))
 
 # Vesta Harness bridge. Empty URL = direct mode for every room.
 DSH_BRIDGE_URL = os.environ.get("DSH_BRIDGE_URL", "").strip()
+# Registered agent name: rooms reach this worker only through an explicit dispatch naming it
+# (the Harness token route and vesta-call-check add one), never by automatic dispatch.
+AGENT_NAME = os.environ.get("AGENT_NAME", "vesta").strip()
 DSH_BRIDGE_SECRET = os.environ.get("DSH_BRIDGE_SECRET") or os.environ.get("LIVEKIT_API_SECRET", "")
 DSH_ROOM_PREFIX = os.environ.get("DSH_ROOM_PREFIX", "dsh-")
 GREETING = os.environ.get("GREETING", "")                       # spoken once on join when set
@@ -938,4 +941,4 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, agent_name=AGENT_NAME))

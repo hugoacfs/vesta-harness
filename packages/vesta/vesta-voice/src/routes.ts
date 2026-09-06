@@ -6,6 +6,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-credentials'
+import { RoomAgentDispatch, RoomConfiguration } from '@livekit/protocol'
 import { AccessToken } from 'livekit-server-sdk'
 import type { Config } from './index.ts'
 
@@ -82,6 +83,10 @@ async function tokenResponse(ctx: Context, config: Config, request: Request): Pr
     canSubscribe: true,
     canPublishData: true,
   })
+  // Explicit dispatch to this deployment's worker: a named agent receives no
+  // automatic dispatch, so a room created by this Host never lands on another
+  // Harness's worker (staging beside production) and the reverse.
+  token.roomConfig = new RoomConfiguration({ agents: [new RoomAgentDispatch({ agentName: config.agentName })] })
   return Response.json({ serverUrl: config.livekitUrl, roomName, token: await token.toJwt() })
 }
 

@@ -1,0 +1,10 @@
+# ~/.vesta-harness-staging/profiles/vesta/cordis.patch.yml — the staging Harness's home
+# patch. A patch replaces the whole matched config, so the bundle's voice fields are restated
+# here with the staging room prefix and worker name (deploy/vesta/livekit-voice.docker-compose.yml,
+# service livekit-agent-staging).
+- id: vesta-voice
+  config:
+    livekitUrl: wss://vesta.tail22b555.ts.net:8481
+    mediaUrl: http://127.0.0.1:8011
+    roomPrefix: dshs-
+    agentName: vesta-staging

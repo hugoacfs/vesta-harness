@@ -9565,6 +9565,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      '@livekit/protocol':
+        specifier: 1.48.0
+        version: 1.48.0
       livekit-server-sdk:
         specifier: ^2.18.0
         version: 2.18.0

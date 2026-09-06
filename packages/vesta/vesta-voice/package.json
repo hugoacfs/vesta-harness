@@ -24,6 +24,7 @@
     "@deepseek-ai/dsh-credentials": "workspace:^",
     "@deepseek-ai/dsh-scope": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
+    "@livekit/protocol": "1.48.0",
     "livekit-server-sdk": "^2.18.0",
     "ws": "8.21.0"
   },

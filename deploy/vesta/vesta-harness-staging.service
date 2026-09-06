@@ -1,0 +1,18 @@
+[Unit]
+Description=Vesta Harness staging (bleeding edge; production is vesta-harness on :3081)
+Documentation=https://github.com/hugoacfs/vesta-harness
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/vesta-harness-staging
+Environment=DSH_HOME=%h/.vesta-harness-staging
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin:%h/.local/share/pnpm
+ExecStart=/usr/bin/env node %h/code/vesta-harness-staging/apps/cli/lib/bin.js --profile vesta --host 127.0.0.1 --port 3082 --trusted-host vesta.tail22b555.ts.net --no-open
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

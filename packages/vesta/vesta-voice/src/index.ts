@@ -38,6 +38,12 @@ export interface Config {
   /** Room name prefix before the Session id. @default 'dsh-' */
   roomPrefix: string
   /**
+   * LiveKit agent name the room token dispatches to. The voice worker registers
+   * under this name, so a second Harness (staging) with its own worker never
+   * receives production rooms and vice versa. @default 'vesta'
+   */
+  agentName: string
+  /**
    * On bind, submit a greeting turn that also warms the request prefix in the
    * model cache; its spoken reply greets the caller. Empty disables warming and
    * leaves the greeting to the agent job's fixed line. @default true
@@ -54,6 +60,7 @@ export const Config: z<Config> = z.object({
   mediaUrl: z.string(),
   tokenTtlSeconds: z.natural().min(60).default(3600),
   roomPrefix: z.string().default('dsh-'),
+  agentName: z.string().default('vesta'),
   warmupOnBind: z.boolean().default(true),
 })
 

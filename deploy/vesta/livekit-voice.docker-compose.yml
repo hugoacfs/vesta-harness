@@ -81,6 +81,7 @@ services:
       - TTS_SPEED=1.2
       - DSH_BRIDGE_URL=ws://127.0.0.1:3081/vesta/voice/bridge   # unset = direct mode for every room
       - DSH_ROOM_PREFIX=dsh-
+      - AGENT_NAME=vesta                    # named worker: rooms reach it only by the Harness token's dispatch (vesta-voice agentName)
       - GREETING=Hi, I'm Vesta. How can I help you today?
       # Bridge mode greets by warming the model prefix (vesta-voice warmupOnBind), whose
       # spoken reply is the greeting; leave BRIDGE_GREETING empty so the agent adds none.
@@ -97,10 +98,49 @@ services:
       # Filler lines (services/livekit-agent/fillers.py): "Hmm." when the first words are late,
       # "Let me check." on the first tool call, "Still on it." during long tool work.
       - FILLERS=1
-      - FILLER_THINK_AFTER_S=0.8
+      - FILLER_THINK_AFTER_S=1.0
     volumes:
       - /srv/ai/compose/livekit-voice/fillers.yaml:/app/fillers.yaml:ro   # copy of deploy/vesta/fillers.yaml
       - /srv/ai/compose/livekit-voice/fillers:/app/fillers                # rendered clips, one dir per voice
+    depends_on: [livekit-server, livekit-media]
+
+  # Staging worker for the second Harness (~/code/vesta-harness-staging on :3082, tailnet :8792):
+  # same image recipe built from the staging checkout, its own bridge, room prefix and agent
+  # name, sharing the SFU, the voice server and the media sidecar with production.
+  # `docker compose --profile staging up -d --build livekit-agent-staging`
+  livekit-agent-staging:
+    profiles: [staging]
+    build: /home/hugo/code/vesta-harness-staging/services/livekit-agent
+    image: livekit-agent:staging
+    container_name: livekit-agent-staging
+    restart: unless-stopped
+    network_mode: host
+    env_file: [.env]
+    environment:
+      - LIVEKIT_URL=ws://192.168.0.2:7880
+      - LITELLM_URL=http://192.168.0.2:4000/litellm/v1
+      - BRAIN_MODEL=default
+      - MEDIA_URL=http://127.0.0.1:8011/v1
+      - KYUTAI_URL=http://127.0.0.1:8010/v1
+      - TTS_MODEL=kyutai/tts-1.6b-en_fr
+      - TTS_VOICE=expresso/ex03-ex01_calm_001_channel1_1143s.wav
+      - TTS_SPEED=1.2
+      - DSH_BRIDGE_URL=ws://127.0.0.1:3082/vesta/voice/bridge
+      - DSH_ROOM_PREFIX=dshs-
+      - AGENT_NAME=vesta-staging
+      - GREETING=Hi, I'm Vesta staging. How can I help you today?
+      - TTS_BACKEND=moshi
+      - STT_BACKEND=moshi
+      - KYUTAI_WS_URL=ws://127.0.0.1:8092
+      - KYUTAI_PAUSE_HEAD=1
+      - TONE_NOTES=1
+      - STT_REFINE=1
+      - BRIDGE_GREETING=
+      - FILLERS=1
+      - FILLER_THINK_AFTER_S=1.0
+    volumes:
+      - /srv/ai/compose/livekit-voice/fillers.yaml:/app/fillers.yaml:ro
+      - /srv/ai/compose/livekit-voice/fillers:/app/fillers
     depends_on: [livekit-server, livekit-media]
 
   # Next.js UI (LiveKit agent-starter-react, rebranded). Stopped; kept as a rollback.

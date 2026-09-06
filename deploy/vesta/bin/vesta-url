@@ -6,7 +6,9 @@
 # host) that survives service restarts. Run this after a restart when a new
 # browser or device needs to get in. Install: ~/.local/bin/vesta-url
 set -eu
-unit=vesta-harness
+# VESTA_UNIT=vesta-harness-staging VESTA_PORT=8792 vesta-url   # the staging instance
+unit=${VESTA_UNIT:-vesta-harness}
+port=${VESTA_PORT:-8790}
 pid=$(systemctl --user show -p MainPID --value "$unit")
 if [ -z "$pid" ] || [ "$pid" = "0" ]; then
   echo "vesta-url: $unit is not running (systemctl --user status $unit)" >&2
@@ -17,4 +19,4 @@ if [ -z "$tok" ]; then
   echo "vesta-url: no startup URL in the journal for pid $pid yet; retry in a few seconds" >&2
   exit 1
 fi
-echo "https://vesta.tail22b555.ts.net:8790/?token=$tok"
+echo "https://vesta.tail22b555.ts.net:$port/?token=$tok"
