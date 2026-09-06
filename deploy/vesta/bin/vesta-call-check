@@ -17,6 +17,7 @@ wait at the end catches speech the agent produces without being asked (the
 continuation after a spoken approval).
 """
 import asyncio
+import os
 import sys
 import time
 import wave
@@ -88,7 +89,20 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
     source = rtc.AudioSource(rate, channels)
     track = rtc.LocalAudioTrack.create_audio_track("microphone", source)
     await room.local_participant.publish_track(track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
-    await asyncio.sleep(2.0)  # let the agent link + greet
+    # Let the agent link and, when the harness warms the prefix with a greeting turn,
+    # finish speaking that greeting (speaking → listening) before the first question.
+    greet_deadline = time.monotonic() + float(os.environ.get("GREETING_WAIT_S", "30"))
+    spoke = False
+    while time.monotonic() < greet_deadline:
+        await asyncio.sleep(0.2)
+        if any(s == "speaking" for _, s in states):
+            spoke = True
+        if spoke and states and states[-1][1] == "listening":
+            break
+    if spoke:
+        print(f"  greeting finished {time.monotonic() - t0:.1f}s after join", flush=True)
+    else:
+        print("  no greeting heard before the deadline", flush=True)
     settle_s = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
     for n, path in enumerate(wav_path.split(","), 1):
         print(f"playing {path} (round {n})...", flush=True)

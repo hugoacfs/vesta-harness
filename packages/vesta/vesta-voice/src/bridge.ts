@@ -179,7 +179,9 @@ export class VoiceBridge {
     const send = (frame: HostToAgent): void => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(frame))
     }
-    void this.quietReasoning(binding)
+    // Reasoning off first, then the greeting: thinking on and off render different
+    // system prompts, so a greeting built before the switch would warm the wrong prefix.
+    const quiet = this.quietReasoning(binding)
     binding.disposers.push(agent.ctx.on('agent/assistant-stream', ({ agent: owner, frame }) => {
       if (owner !== agent || frame.type !== 'chunk' || frame.chunk.type !== 'text-delta') return
       send({ type: 'speak', text: frame.chunk.text })
@@ -247,7 +249,9 @@ export class VoiceBridge {
     this.ctx.logger.info(`vesta-voice: room bound to session ${String(sessionId)}`)
     // The greeting turn runs the request prefix through the model now, so the
     // first real utterance reuses a warm cache instead of paying a cold prefill.
-    if (this.config.warmupOnBind && agent.status !== 'running') void this.warmup(binding)
+    if (this.config.warmupOnBind && agent.status !== 'running') {
+      void quiet.then(() => this.warmup(binding))
+    }
   }
 
   private unbind(binding: Binding, code?: number, reason?: string): void {
