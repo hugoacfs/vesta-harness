@@ -47,6 +47,7 @@ services:
       - HF_HOME=/models/hf
     volumes:
       - /srv/ai/models/voice-agent/hf:/models/hf
+      - /srv/ai/compose/livekit-voice/debug:/app/debug   # clips where Whisper and SenseVoice disagreed (newest 20)
     ports:
       - "127.0.0.1:8011:8000"
     deploy:

@@ -460,17 +460,18 @@ class KyutaiSTT(stt.STT):
         m = _TONE_NOTE.search(str(data.get("text", "")))
         return m.group(0) if m else None
 
-    async def refine(self, pcm: np.ndarray) -> tuple[str | None, str | None]:
-        """Second pass over one finished utterance: (text, note); either is None when the
-        sidecar has nothing better (no Whisper loaded, neutral tone, notes hidden)."""
+    async def refine(self, pcm: np.ndarray) -> tuple[str | None, str | None, str | None]:
+        """Second pass over one finished utterance: (text, note, SenseVoice's own reading);
+        each is None when the sidecar has nothing (no Whisper loaded, neutral tone, notes hidden)."""
         if not self._refine_url or len(pcm) < SAMPLE_RATE // 4:
-            return None, None
+            return None, None, None
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=REFINE_TIMEOUT_S + 1.0)) as http:
             async with http.post(self._refine_url, data=self._wav_form(pcm)) as r:
                 data = await r.json()
         text = str(data.get("text") or "").strip() or None
         note = str(data.get("note") or "").strip() or None
-        return text, note
+        other = str(data.get("sensevoice_text") or "").strip() or None
+        return text, note, other
 
 
 # moshi-server drops an ASR socket that has carried no message for 120 s (batched_asr.rs,
@@ -495,13 +496,30 @@ GATE_TAIL_S = float(os.environ.get("KYUTAI_GATE_TAIL_S", "1.0"))
 REFINE_DEBOUNCE_S = float(os.environ.get("KYUTAI_REFINE_DEBOUNCE_S", "0.25"))
 
 
-def _plausible(refined: str | None, streamed: str) -> bool:
-    """Accept the second pass unless it is empty or wildly different in length from the
-    streamed words (a hallucinated sentence over silence, or a truncated one)."""
+_WORD = re.compile(r"[a-z0-9']+")
+
+
+def _similarity(a: str, b: str) -> float:
+    """Jaccard overlap of the lowercase word sets (punctuation ignored)."""
+    wa, wb = set(_WORD.findall(a.lower())), set(_WORD.findall(b.lower()))
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / len(wa | wb)
+
+
+def _plausible(refined: str | None, streamed: str, second_opinion: str | None = None) -> bool:
+    """Accept the second pass when it is non-empty, not wildly different in length from the
+    streamed words, and agrees with at least one other reading of the same audio (the
+    streamed words or SenseVoice's). A Whisper hallucination ("Thank you for listening to
+    me." over an interrupted "Hello, can you hear me?") agrees with neither."""
     if not refined:
         return False
     ratio = len(refined.split()) / max(1, len(streamed.split()))
-    return 0.5 <= ratio <= 2.5
+    if not 0.5 <= ratio <= 2.5:
+        return False
+    if _similarity(refined, streamed) >= 0.5:
+        return True
+    return bool(second_opinion) and _similarity(refined, second_opinion) >= 0.5
 
 
 class KyutaiRecognizeStream(stt.RecognizeStream):
@@ -517,7 +535,7 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         self._audio: list[np.ndarray] = []   # the utterance so far (from the lead-in on), for the second pass
         self._lead: list[np.ndarray] = []    # rolling audio before the first word
         self._lead_samples = 0
-        self._spec: asyncio.Task[tuple[str | None, str | None]] | None = None   # second pass started at the pause
+        self._spec: asyncio.Task[tuple[str | None, str | None, str | None]] | None = None   # second pass started at the pause
         self._spec_words = 0                 # how many words it covered
         self._spec_timer: asyncio.TimerHandle | None = None   # debounce for late-word re-runs
         self._delivery: asyncio.Task[None] | None = None   # finals are delivered in order
@@ -534,7 +552,7 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         ev = stt.SpeechEvent(type=kind, request_id="", alternatives=[stt.SpeechData(language=self._language, text=text)] if text or kind in (stt.SpeechEventType.INTERIM_TRANSCRIPT, stt.SpeechEventType.FINAL_TRANSCRIPT) else [])
         self._event_ch.send_nowait(ev)
 
-    def _start_refine(self) -> asyncio.Task[tuple[str | None, str | None]]:
+    def _start_refine(self) -> asyncio.Task[tuple[str | None, str | None, str | None]]:
         audio = np.concatenate(self._audio) if self._audio else np.zeros(0, dtype=np.float32)
         return asyncio.get_running_loop().create_task(self._kyutai.refine(audio))
 
@@ -580,22 +598,26 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         pending = spec or asyncio.get_running_loop().create_task(self._kyutai.refine(audio))
         self._delivery = asyncio.get_running_loop().create_task(self._deliver(self._delivery, text, pending, reason, started))
 
-    async def _deliver(self, previous: asyncio.Task[None] | None, text: str, pending: asyncio.Task[tuple[str | None, str | None]], reason: str, started: float) -> None:
+    async def _deliver(self, previous: asyncio.Task[None] | None, text: str, pending: asyncio.Task[tuple[str | None, str | None, str | None]], reason: str, started: float) -> None:
         if previous is not None:
             await asyncio.wait({previous})
         t0 = time.monotonic()
         refined: str | None = None
         note: str | None = None
+        other: str | None = None
         try:
-            refined, note = await asyncio.wait_for(pending, REFINE_TIMEOUT_S)
+            refined, note, other = await asyncio.wait_for(pending, REFINE_TIMEOUT_S)
         except asyncio.TimeoutError:
             log.warning("kyutai stt: second pass took over %.1fs; using the streamed words", REFINE_TIMEOUT_S)
         except Exception as e:  # noqa: BLE001
             log.warning("kyutai stt: second pass failed (%s); using the streamed words", e)
-        final = refined if _plausible(refined, text) else text
+        accepted = _plausible(refined, text, other)
+        final = refined if accepted and refined else text
+        detail = "" if final == text else f" (streamed: {text[:60]!r})"
+        if refined and not accepted:
+            detail = f" (rejected second pass: {refined[:60]!r}; sensevoice: {(other or '')[:60]!r})"
         log.info("kyutai stt: final (%s) %.1fs after first word, second pass waited %dms: %r%s",
-                 reason, time.monotonic() - started, int((time.monotonic() - t0) * 1000), final[:80],
-                 "" if final == text else f" (streamed: {text[:60]!r})")
+                 reason, time.monotonic() - started, int((time.monotonic() - t0) * 1000), final[:80], detail)
         if note and self._kyutai._on_tone is not None:
             self._kyutai._on_tone(note)   # before the transcript, so the note rides on this turn
         self._emit(stt.SpeechEventType.FINAL_TRANSCRIPT, final)

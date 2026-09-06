@@ -21,6 +21,7 @@ text the brain actually receives, with SenseVoice run alongside for the tone not
 import asyncio
 import os
 import re
+import shutil
 import tempfile
 import time
 
@@ -51,6 +52,9 @@ REFINE_COMPUTE = os.environ.get("REFINE_COMPUTE", "int8_float16")
 REFINE_LANGUAGE = os.environ.get("REFINE_LANGUAGE", "en")
 # Whisper biases towards the vocabulary of its prompt: the names the caller actually uses.
 REFINE_PROMPT = os.environ.get("REFINE_PROMPT", "Vesta, Qwen, LiveKit, Kyutai, vLLM, LiteLLM, Docker, tailnet, harness, SearXNG.")
+# When Whisper and SenseVoice disagree on an utterance, the clip is kept here (newest 20) so
+# a bad reading can be replayed against both. Empty disables.
+REFINE_DEBUG_DIR = os.environ.get("REFINE_DEBUG_DIR", "/app/debug/refine")
 _whisper = None
 _whisper_dev = None
 if REFINE_MODEL:
@@ -145,6 +149,35 @@ def _refine(path: str) -> str:
     return " ".join(seg.text.strip() for seg in segments).strip()
 
 
+_WORD_RE = re.compile(r"[a-z0-9']+")
+
+
+def _agree(a: str, b: str) -> bool:
+    wa, wb = set(_WORD_RE.findall(a.lower())), set(_WORD_RE.findall(b.lower()))
+    return bool(wa and wb) and len(wa & wb) / len(wa | wb) >= 0.5
+
+
+def _keep_for_debug(path: str, whisper_text: str, sensevoice_text: str) -> None:
+    if not REFINE_DEBUG_DIR or not whisper_text or _agree(whisper_text, sensevoice_text):
+        return
+    try:
+        os.makedirs(REFINE_DEBUG_DIR, exist_ok=True)
+        stamp = time.strftime("%Y%m%dT%H%M%S")
+        base = os.path.join(REFINE_DEBUG_DIR, f"{stamp}-{int(time.time() * 1000) % 1000:03d}")
+        shutil.copyfile(path, base + ".wav")
+        with open(base + ".txt", "w") as f:
+            f.write(f"whisper: {whisper_text}\nsensevoice: {sensevoice_text}\n")
+        kept = sorted(p for p in os.listdir(REFINE_DEBUG_DIR) if p.endswith(".wav"))
+        for old in kept[:-20]:
+            for ext in (".wav", ".txt"):
+                try:
+                    os.unlink(os.path.join(REFINE_DEBUG_DIR, old[:-4] + ext))
+                except OSError:
+                    pass
+    except Exception as e:  # noqa: BLE001
+        print("[refine] debug copy failed:", e, flush=True)
+
+
 async def _save_upload(file: UploadFile) -> str:
     data = await file.read()
     suffix = os.path.splitext(file.filename or "audio.wav")[1] or ".wav"
@@ -166,6 +199,7 @@ async def refine(file: UploadFile = File(...)):
             (clean, emotion, events), refined = await asyncio.gather(tone_task, asyncio.to_thread(_refine, path))
         else:
             (clean, emotion, events), refined = await tone_task, ""
+        _keep_for_debug(path, refined, clean)
     finally:
         try:
             os.unlink(path)

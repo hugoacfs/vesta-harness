@@ -11,6 +11,10 @@ the LiveKit credentials):
   docker exec -i livekit-agent python - <sessionId> </path/inside/container.wav
 
   vesta-call-check <sessionId> <wav path>[,<wav path>...] [seconds to wait per reply, default 40] [settle seconds, default 0]
+Environment: GREETING_WAIT_S (default 30) how long to wait for the greeting to finish before the
+first WAV; PLAY_AFTER_S (default 0) with GREETING_WAIT_S=0 plays the first WAV this long after
+joining, i.e. over the greeting, for a barge-in check; BARGE_AFTER_S (default 0) plays the second
+WAV this long after the first reply starts, i.e. over it. Silence is streamed between WAVs.
 
 Each WAV is one spoken turn, played after the previous reply ended; the settle
 wait at the end catches speech the agent produces without being asked (the
@@ -38,18 +42,19 @@ def token(room: str) -> str:
     )
 
 
-async def play(source: rtc.AudioSource, path: str) -> None:
-    with wave.open(path, "rb") as wav:
-        rate, channels, width = wav.getframerate(), wav.getnchannels(), wav.getsampwidth()
-        assert width == 2, "16-bit PCM expected"
-        chunk = rate // 100  # 10 ms
-        while True:
-            data = wav.readframes(chunk)
-            if not data:
-                break
-            frame = rtc.AudioFrame(data=data, sample_rate=rate, num_channels=channels, samples_per_channel=len(data) // (2 * channels))
-            await source.capture_frame(frame)
-    await source.wait_for_playout()
+async def play(source: rtc.AudioSource, path: str, lock: asyncio.Lock) -> None:
+    async with lock:   # the silence feeder must not capture into the source at the same time
+        with wave.open(path, "rb") as wav:
+            rate, channels, width = wav.getframerate(), wav.getnchannels(), wav.getsampwidth()
+            assert width == 2, "16-bit PCM expected"
+            chunk = rate // 100  # 10 ms
+            while True:
+                data = wav.readframes(chunk)
+                if not data:
+                    break
+                frame = rtc.AudioFrame(data=data, sample_rate=rate, num_channels=channels, samples_per_channel=len(data) // (2 * channels))
+                await source.capture_frame(frame)
+        await source.wait_for_playout()
 
 
 async def main(session_id: str, wav_path: str, wait_s: float) -> int:
@@ -89,9 +94,25 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
     source = rtc.AudioSource(rate, channels)
     track = rtc.LocalAudioTrack.create_audio_track("microphone", source)
     await room.local_participant.publish_track(track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
+    # A browser microphone never stops: feed silence between the WAVs so the agent's listener
+    # sees a continuous timeline (its gate and keepalive only make sense against one).
+    lock = asyncio.Lock()
+
+    async def silence() -> None:
+        frame = rtc.AudioFrame.create(rate, channels, rate // 50)   # 20 ms of zeros
+        while True:
+            async with lock:
+                await source.capture_frame(frame)   # paced by the source's own queue
+            await asyncio.sleep(0)
+
+    feeder = asyncio.ensure_future(silence())
     # Let the agent link and, when the harness warms the prefix with a greeting turn,
     # finish speaking that greeting (speaking → listening) before the first question.
     greet_deadline = time.monotonic() + float(os.environ.get("GREETING_WAIT_S", "30"))
+    # GREETING_WAIT_S=0 with PLAY_AFTER_S=2: talk over the greeting (barge-in check).
+    play_after = float(os.environ.get("PLAY_AFTER_S", "0"))
+    # BARGE_AFTER_S=4: play the second WAV this long after the first reply starts, i.e. over it.
+    barge_after = float(os.environ.get("BARGE_AFTER_S", "0"))
     spoke = False
     while time.monotonic() < greet_deadline:
         await asyncio.sleep(0.2)
@@ -104,9 +125,11 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
     else:
         print("  no greeting heard before the deadline", flush=True)
     settle_s = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
+    if play_after > 0:
+        await asyncio.sleep(max(0.0, play_after - (time.monotonic() - t0)))
     for n, path in enumerate(wav_path.split(","), 1):
-        print(f"playing {path} (round {n})...", flush=True)
-        await play(source, path)
+        print(f"playing {path} (round {n}) at {time.monotonic() - t0:.1f}s...", flush=True)
+        await play(source, path, lock)
         asked = time.monotonic()
         print("question played; waiting for the reply...", flush=True)
         first_speech = None
@@ -119,12 +142,17 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
                 print(f"  reply started {first_speech - asked:.1f}s after the question ended", flush=True)
             if first_speech is not None and later and later[-1][1] == "listening" and t0 + later[-1][0] > first_speech:
                 break
+            if first_speech is not None and barge_after > 0 and n == 1 and time.monotonic() >= first_speech + barge_after:
+                print(f"  barging in {barge_after:.0f}s into the reply", flush=True)
+                break
         if first_speech is None:
             print("  no reply within the wait", flush=True)
-        await asyncio.sleep(1.0)
+        if not (barge_after > 0 and n == 1):
+            await asyncio.sleep(1.0)
     if settle_s > 0:
         print(f"settling {settle_s:.0f}s for unprompted speech...", flush=True)
         await asyncio.sleep(settle_s)
+    feeder.cancel()
     await room.disconnect()
     print(f"agent audio received: {heard['frames']} frames, {heard['ms'] / 1000:.1f}s")
     print("states:", " -> ".join(s for _, s in states) or "(none)")
