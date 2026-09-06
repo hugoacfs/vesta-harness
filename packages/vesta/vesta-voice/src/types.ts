@@ -66,6 +66,11 @@ export type HostToAgent =
     readonly outcome: string
   }
   | {
+    /** The Session's permission preset changed (on screen or by voice); the agent answers "what mode am I in" from it. */
+    readonly type: 'permission'
+    readonly preset: string
+  }
+  | {
     /** Host-initiated speech outside a turn: confirmations of spoken commands. */
     readonly type: 'say'
     readonly text: string

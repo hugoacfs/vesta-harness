@@ -1,0 +1,37 @@
+# Kyutai TTS (Unmute's voice) — OpenAI-compatible /v1/audio/speech on the 3060.
+# Installed at /srv/ai/compose/kyutai-tts/docker-compose.yaml; .env (HF_TOKEN) and
+# ./cache stay in that directory. Source of truth: services/kyutai-tts in the
+# vesta-harness checkout (vendored from NillPointer/Kyutai-TTS-Server + the
+# streaming pcm path); model kyutai/tts-1.6b-en_fr.
+name: kyutai-tts
+
+services:
+  kyutai-tts:
+    build:
+      context: /home/hugo/code/vesta-harness/services/kyutai-tts
+      dockerfile: Dockerfile
+    container_name: kyutai-tts
+    restart: unless-stopped
+    env_file: [.env]                  # HF_TOKEN — lifts HF anon rate limit for the voice-repo pull
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_HOME=/app/cache
+      - TRANSFORMERS_CACHE=/app/cache
+    volumes:
+      - ./cache:/app/cache            # persist the downloaded model + voices
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["GPU-4c4e6e17-74ee-b26e-9b6a-a047eaaa74e0"]  # RTX 3060 only
+              capabilities: [gpu]
+    ports:
+      - "127.0.0.1:8010:8000"         # loopback: livekit-agent (host networking) and local tests
+    networks: [default, gateway]      # gateway → reachable as http://kyutai-tts:8000 inside local-gateway_default
+
+networks:
+  default:
+  gateway:
+    external: true
+    name: local-gateway_default

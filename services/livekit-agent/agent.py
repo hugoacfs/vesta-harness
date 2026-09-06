@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
 from typing import Any
 
@@ -68,6 +69,16 @@ GREETING = os.environ.get("GREETING", "")                       # spoken once on
 BRIDGE_GREETING = os.environ.get("BRIDGE_GREETING", "")         # bridge-mode variant (default: silent)
 TURN_TIMEOUT_S = float(os.environ.get("DSH_TURN_TIMEOUT_S", "600"))  # a long tool turn may take minutes
 COMMAND_TIMEOUT_S = float(os.environ.get("DSH_COMMAND_TIMEOUT_S", "10"))  # host reply to a spoken command
+# No dead air: spoken as soon as the first tool call starts if the model has not said anything yet
+# (empty disables), then a short progress line every PROGRESS_INTERVAL_S of silent tool work.
+TOOL_ACK = os.environ.get("DSH_TOOL_ACK", "Let me check.").strip()
+PROGRESS_INTERVAL_S = float(os.environ.get("DSH_PROGRESS_INTERVAL_S", "25"))
+PROGRESS_PHRASES = [p.strip() for p in os.environ.get("DSH_PROGRESS_PHRASES", "Still on it.|Working on it.|Almost there.").split("|") if p.strip()]
+# Turn-taking: how long after you stop before the agent takes the turn, and how long you must
+# speak over it before it yields. LiveKit defaults are 0.5 / 6.0 / 0.5.
+MIN_ENDPOINTING_S = float(os.environ.get("MIN_ENDPOINTING_S", "0.4"))
+MAX_ENDPOINTING_S = float(os.environ.get("MAX_ENDPOINTING_S", "3.0"))
+MIN_INTERRUPTION_S = float(os.environ.get("MIN_INTERRUPTION_S", "0.4"))
 
 SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", (
     "You are Vesta's voice assistant. You are speaking out loud, so keep replies "
@@ -188,7 +199,10 @@ _PRESET_WORDS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(workspace|work ?space|normal|standard|default)\b", re.IGNORECASE), "workspace-write"),
     (re.compile(r"\b(full|danger(ous)?|unrestricted|unsafe|everything|god)\b", re.IGNORECASE), "danger-full-access"),
 ]
+_MODE_QUERY = re.compile(r"\b(what|which)\b.{0,40}\b(mode|permission|permissions|access level|autonomy)\b", re.IGNORECASE)
 _ESCALATION = re.compile(r"^escalate sandbox to (\S+):\s*(.*)$", re.DOTALL)
+_PRESET_SPOKEN = {"read-only": "read-only mode", "workspace-write": "workspace mode",
+                  "danger-full-access": "full access mode", "custom": "a custom permission setup"}
 _MODE_SPOKEN = {"read-only": "read-only access", "workspace-write": "workspace write access",
                 "danger-full-access": "full access"}
 
@@ -221,6 +235,15 @@ def permission_request(text: str) -> str | None:
         if pattern.search(t):
             return preset
     return None
+
+
+def is_mode_query(text: str) -> bool:
+    t = strip_perception(text)
+    return len(t.split()) <= 12 and _MODE_QUERY.search(t) is not None and permission_request(t) is None
+
+
+def spoken_preset(preset: str) -> str:
+    return _PRESET_SPOKEN.get(preset, f"{preset.replace('-', ' ')} mode")
 
 
 def approval_question(tool: str, reason: str | None) -> str:
@@ -315,6 +338,9 @@ class DshBridge:
             if self.pending_approval is not None and self.pending_approval["id"] == str(frame.get("id")):
                 log.info("harness approval settled: %s", frame.get("outcome"))
                 self.pending_approval = None
+        elif kind == "permission":
+            self.permission = str(frame.get("preset") or "custom")
+            log.info("harness permission now %s", self.permission)
         elif kind == "say":
             text = str(frame.get("text", ""))
             if self._command_reply is not None and not self._command_reply.done():
@@ -364,11 +390,19 @@ class DshBridge:
                         yield piece
 
             try:
-                self._session.say(spoken())
+                handle = self._session.say(spoken())
             except Exception as e:  # noqa: BLE001
                 log.warning("passive say failed: %s", e)
                 self._passive = None
                 return
+
+            def _on_done(h: Any, q: asyncio.Queue[str | None] = queue) -> None:
+                # Barge-in over unprompted speech: stop the harness turn as well, not only the audio.
+                if getattr(h, "interrupted", False) and self._passive is q:
+                    self._end_passive()
+                    asyncio.get_running_loop().create_task(self.interrupt())
+
+            handle.add_done_callback(_on_done)
         self._passive.put_nowait(delta)
 
     def _end_passive(self) -> None:
@@ -488,6 +522,9 @@ class DshBridgeStream(llm.LLMStream):
             await self._bridge.interrupt()
             self._reply(request_id, "Okay, stopped.")
             return
+        if is_mode_query(text):
+            self._reply(request_id, f"You're in {spoken_preset(self._bridge.permission)}.")
+            return
         preset = permission_request(text)
         if preset is not None:
             self._reply(request_id, await self._bridge.request_permission(preset))
@@ -495,15 +532,34 @@ class DshBridgeStream(llm.LLMStream):
         queue = await self._bridge.send_turn(text)
         spoken = SpokenTextFilter()
         interrupted = False
+        spoken_any = False
+        tool_active = False
+        last_speech_at = time.monotonic()
+        deadline = last_speech_at + TURN_TIMEOUT_S
+        progress_index = 0
         try:
             while True:
-                frame = await asyncio.wait_for(queue.get(), TURN_TIMEOUT_S)
+                try:
+                    frame = await asyncio.wait_for(queue.get(), 1.0)
+                except asyncio.TimeoutError:
+                    now = time.monotonic()
+                    if now > deadline:
+                        raise
+                    if (tool_active and PROGRESS_INTERVAL_S > 0 and progress_index < len(PROGRESS_PHRASES)
+                            and now - last_speech_at >= PROGRESS_INTERVAL_S):
+                        self._reply(request_id, " " + PROGRESS_PHRASES[progress_index] + " ")
+                        progress_index += 1
+                        last_speech_at = now
+                    continue
                 kind = frame.get("type")
                 if kind == "speak":
                     piece = spoken.feed(str(frame.get("text", "")))
                     if piece:
                         self._event_ch.send_nowait(llm.ChatChunk(
                             id=request_id, delta=llm.ChoiceDelta(role="assistant", content=piece)))
+                        if piece.strip():
+                            spoken_any = True
+                            last_speech_at = time.monotonic()
                 elif kind == "done":
                     tail = spoken.flush()
                     if tail:
@@ -521,6 +577,12 @@ class DshBridgeStream(llm.LLMStream):
                     raise RuntimeError(f"harness: {frame.get('message', 'turn failed')}")
                 elif kind == "status":
                     log.info("harness tool: %s", frame.get("tool"))
+                    tool_active = True
+                    if not spoken_any and TOOL_ACK:
+                        # The model went straight to tools: fill the silence once.
+                        self._reply(request_id, TOOL_ACK + " ")
+                        spoken_any = True
+                        last_speech_at = time.monotonic()
         except asyncio.CancelledError:
             interrupted = True
             raise
@@ -572,14 +634,19 @@ async def entrypoint(ctx: JobContext) -> None:
     session = AgentSession(
         stt=openai.STT(model="whisper-1", language="en", base_url=MEDIA_URL, api_key="not-needed"),
         llm=brain,
+        # response_format=pcm: the Kyutai sidecar streams raw 24 kHz s16le while it is
+        # still generating, and the plugin pushes bytes as they arrive, so playback
+        # starts ~200 ms into a sentence instead of after the whole sentence renders.
         tts=openai.TTS(
             model=TTS_MODEL, voice=TTS_VOICE, speed=TTS_SPEED,
-            base_url=KYUTAI_URL, api_key="not-needed", response_format="wav",
+            base_url=KYUTAI_URL, api_key="not-needed", response_format="pcm",
         ),
         vad=silero.VAD.load(),
         turn_detection=EnglishModel(),
         allow_interruptions=True,          # barge-in: user speech cuts off the reply
-        min_interruption_duration=0.5,
+        min_interruption_duration=MIN_INTERRUPTION_S,
+        min_endpointing_delay=MIN_ENDPOINTING_S,
+        max_endpointing_delay=MAX_ENDPOINTING_S,
     )
     # Keep the agent alive across browser reconnects: the default closes the
     # session when the linked participant drops, which left later joins of the

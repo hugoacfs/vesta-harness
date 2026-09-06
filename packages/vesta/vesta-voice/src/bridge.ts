@@ -161,11 +161,14 @@ export class VoiceBridge {
       const data = (typeof record.data === 'object' && record.data !== null ? record.data : {}) as {
         readonly name?: unknown
         readonly reason?: unknown
+        readonly preset?: unknown
       }
       if (record.type === 'tool/call' && typeof data.name === 'string') {
         send({ type: 'status', tool: data.name })
       } else if (record.type === 'turn/end') {
         send({ type: 'done', reason: typeof data.reason === 'string' ? data.reason : 'closed' })
+      } else if (record.type === 'permission/preset' && typeof data.preset === 'string') {
+        send({ type: 'permission', preset: data.preset })
       }
     }))
     // Outermost answerer: the on-screen card (registered at boot) would

@@ -28,6 +28,7 @@ While a room is bound the bridge is also the outermost `approval/request` answer
 | host → agent | `ready {sessionId, permission}` | bound; preset in effect |
 | host → agent | `speak {text}` / `status {tool}` / `done {reason}` | assistant text delta, tool call, turn end |
 | host → agent | `approval {id, tool, reason?}` / `approval-done {id, outcome}` | ask aloud; stop asking |
+| host → agent | `permission {preset}` | the Session's preset changed (screen or voice) |
 | host → agent | `say {text}` / `error {message}` | host-initiated speech; refusal |
 
 The agent job owns speech: it turns `approval` into a spoken question, judges the next utterance as yes/no, and handles "stop" and "switch to … mode" before anything reaches the model.
@@ -46,4 +47,3 @@ The system prompt is untouched by a call; the per-turn note appends to history, 
 - Barge-in forwards `interrupt` whenever the agent's reply is cut off, which also aborts tool work the model started after its spoken preamble.
 - Perception toggle is global to the STT sidecar, not per Session.
 - Approvals only arise where the composition asks: sandbox escalation (`sandbox_permissions` on bash and fs calls in a `read-only` or `workspace-write` Session) and hook-driven asks. A `danger-full-access` Session never asks, so nothing is spoken there.
-- A permission switch made on screen during a call is not announced to the agent job; only `ready` and spoken switches update its notion of the preset.

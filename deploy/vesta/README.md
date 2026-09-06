@@ -101,10 +101,13 @@ During a call these utterances are handled by the agent worker and never reach t
 | "switch to safe mode" / "read-only mode" | `permission/preset` → `read-only` |
 | "switch to workspace mode" | → `workspace-write` |
 | "switch to full access mode" / "dangerous mode" | → `danger-full-access` |
+| "what mode am I in?" | answers from the harness's last `permission` notice (on-screen changes included) |
 
 A permission utterance needs a verb (switch, change, set, go, put, use, give…) and a mode word (mode, permission, access), so "list files in workspace mode" style false positives stay rare. The harness confirms aloud ("Switched to read-only mode.") and the header's permission selector updates.
 
 When a tool call needs approval (sandbox escalation in `read-only` / `workspace-write`), the assistant asks aloud ("The bash tool wants workspace write access, to create the notes file. Allow it?") and the on-screen card appears too. Answer with "yes" / "no" (or click); the first answer wins, the card closes on a spoken answer, and the turn continues with the assistant's follow-up spoken unprompted. Without the Landlock binary (see Prerequisites) the non-escalated commands in those modes fail closed, so the model escalates more often; that is expected until `musl-tools` is installed.
+
+Conversational feel knobs on `livekit-agent` (env, defaults in brackets): `DSH_TOOL_ACK` ["Let me check."] spoken when the first tool call starts before the model has said anything; `DSH_PROGRESS_INTERVAL_S` [25] and `DSH_PROGRESS_PHRASES` ["Still on it.|Working on it.|Almost there."] for silent tool work; `MIN_ENDPOINTING_S` [0.4], `MAX_ENDPOINTING_S` [3.0], `MIN_INTERRUPTION_S` [0.4] for turn-taking (LiveKit defaults 0.5 / 6.0 / 0.5). The TTS sidecar streams raw PCM while it generates (`response_format: pcm`; log line `first audio chunk after N s`), and a barge-in over unprompted speech now cancels the harness turn too.
 
 Scripted check from the agent container (WAVs made with the TTS sidecar; `settle` catches the unprompted continuation). Session ids carry the `session-` prefix (directory name under `$DSH_HOME/sessions/<workspace>/`), so the room is `dsh-session-<uuid>`; a bare uuid answers `404` at the bridge:
 
