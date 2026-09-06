@@ -14,7 +14,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY agent.py .
+COPY agent.py kyutai.py .
 # Pre-download the silero VAD + turn-detector model weights into the image so the
 # worker starts fast and offline. (|| true: fall back to a runtime download.)
 RUN python agent.py download-files || true

@@ -59,6 +59,12 @@ SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://ai-searxng:8080").rstrip("/"
 TTS_MODEL = os.environ.get("TTS_MODEL", "kyutai/tts-1.6b-en_fr")
 TTS_VOICE = os.environ.get("TTS_VOICE", "expresso/ex03-ex01_calm_001_channel1_1143s.wav")  # "calm"
 TTS_SPEED = float(os.environ.get("TTS_SPEED", "1.2"))
+# Voice backends. "moshi" = Kyutai moshi-server (streaming text in, streaming words out, see
+# kyutai.py); "openai" / "sensevoice" = the OpenAI-compatible sidecars (batch, with tone notes).
+TTS_BACKEND = os.environ.get("TTS_BACKEND", "openai").strip().lower()
+STT_BACKEND = os.environ.get("STT_BACKEND", "sensevoice").strip().lower()
+KYUTAI_WS_URL = os.environ.get("KYUTAI_WS_URL", "ws://127.0.0.1:8090")
+KYUTAI_API_KEY = os.environ.get("KYUTAI_API_KEY", "public_token")
 MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "5"))
 
 # Vesta Harness bridge. Empty URL = direct mode for every room.
@@ -729,16 +735,27 @@ async def entrypoint(ctx: JobContext) -> None:
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
 
-    session = AgentSession(
-        stt=openai.STT(model="whisper-1", language="en", base_url=MEDIA_URL, api_key="not-needed"),
-        llm=brain,
+    if STT_BACKEND == "moshi":
+        from kyutai import KyutaiSTT
+        stt_engine = KyutaiSTT(url=KYUTAI_WS_URL, api_key=KYUTAI_API_KEY, language="en")
+    else:
+        stt_engine = openai.STT(model="whisper-1", language="en", base_url=MEDIA_URL, api_key="not-needed")
+    if TTS_BACKEND == "moshi":
+        from kyutai import KyutaiTTS
+        tts_engine = KyutaiTTS(url=KYUTAI_WS_URL, voice=TTS_VOICE, api_key=KYUTAI_API_KEY, speed=TTS_SPEED)
+    else:
         # response_format=pcm: the Kyutai sidecar streams raw 24 kHz s16le while it is
         # still generating, and the plugin pushes bytes as they arrive, so playback
         # starts ~200 ms into a sentence instead of after the whole sentence renders.
-        tts=openai.TTS(
+        tts_engine = openai.TTS(
             model=TTS_MODEL, voice=TTS_VOICE, speed=TTS_SPEED,
             base_url=KYUTAI_URL, api_key="not-needed", response_format="pcm",
-        ),
+        )
+    log.info("voice backends: stt=%s tts=%s", STT_BACKEND, TTS_BACKEND)
+    session = AgentSession(
+        stt=stt_engine,
+        llm=brain,
+        tts=tts_engine,
         vad=silero.VAD.load(),
         turn_detection=EnglishModel(),
         allow_interruptions=True,          # barge-in: user speech cuts off the reply

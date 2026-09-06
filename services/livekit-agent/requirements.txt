@@ -8,3 +8,5 @@ livekit-plugins-silero
 livekit-plugins-turn-detector
 httpx>=0.27
 aiohttp>=3.9
+msgpack>=1.0
+websockets>=13
