@@ -11,7 +11,7 @@ from huggingface_hub import snapshot_download
 from fastapi import HTTPException
 from moshi.models.loaders import CheckpointInfo
 from moshi.models.tts import DEFAULT_DSM_TTS_REPO, DEFAULT_DSM_TTS_VOICE_REPO, TTSModel
-from config import logger, DEFAULT_MODEL_PARAMS
+from config import logger, DEFAULT_MODEL_PARAMS, CFG_COEF
 
 # Global model instance (loaded once)
 tts_model = None
@@ -80,7 +80,7 @@ def generate_audio_bytes(request):
 
         # Create condition attributes
         condition_attributes = tts_model.make_condition_attributes(
-            voice_paths, cfg_coef=2.0
+            voice_paths, cfg_coef=CFG_COEF
         )
 
         # Generate audio
@@ -137,7 +137,7 @@ def _prepare(request):
     entries = tts_model.prepare_script(inputs, padding_between=1)
     voices = [request.voice] if request.voice else request.voices
     voice_paths = [tts_model.get_voice_path(v) for v in voices]
-    condition_attributes = tts_model.make_condition_attributes(voice_paths, cfg_coef=2.0)
+    condition_attributes = tts_model.make_condition_attributes(voice_paths, cfg_coef=CFG_COEF)
     return [entries], [condition_attributes]
 
 

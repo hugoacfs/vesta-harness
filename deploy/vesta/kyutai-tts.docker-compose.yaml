@@ -17,6 +17,10 @@ services:
       - PYTHONUNBUFFERED=1
       - HF_HOME=/app/cache
       - TRANSFORMERS_CACHE=/app/cache
+      # Time-to-first-audio levers (see services/kyutai-tts/app/config.py); defaults shown.
+      - KYUTAI_CFG_COEF=2.0
+      - KYUTAI_N_Q=32
+      - KYUTAI_TEMP=0.6
     volumes:
       - ./cache:/app/cache            # persist the downloaded model + voices
     deploy:
