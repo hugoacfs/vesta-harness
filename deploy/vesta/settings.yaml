@@ -18,6 +18,16 @@ llm-pi-ai:
       # default, which Qwen calls xhigh. A voice call switches its Session to
       # `off` for the call's duration (vesta-voice) and restores this afterwards.
       reasoning: xhigh
+      # Cap the thinking phase so an answer always fits in maxTokens: pi-ai
+      # sends vLLM's top-level thinking_token_budget = min(budget[level],
+      # maxTokens - 1024); xhigh clamps to the `high` budget. Without it an
+      # open-ended planning prompt can spend the whole output budget thinking
+      # and end the turn with "output limit reached" (seen 2026-09-05).
+      thinkingBudgets:
+        minimal: 1024
+        low: 2048
+        medium: 8192
+        high: 16384
       models:
         # contextWindow/maxTokens mirror the local-gateway LiteLLM caps
         # (vLLM lane 114688 in / 16384 out; Ornith lane 65536 in / 8192 out).
@@ -32,6 +42,7 @@ llm-pi-ai:
             xhigh: xhigh
           compat:
             thinkingFormat: qwen-chat-template
+            supportsThinkingTokenBudget: true
         - id: assistant
           name: Ornith 9B
           contextWindow: 65536
