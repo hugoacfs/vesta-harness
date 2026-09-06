@@ -96,14 +96,17 @@ Checks: `docker logs -f livekit-agent` shows `bridge bound: room=dsh-… session
 `services/moshi-server` builds Kyutai's Rust `moshi-server` (the server behind Unmute) with both voice models on the 3060 in one container: streaming TTS at `/api/tts_streaming` (text in as it is generated, audio out a few hundred ms later) and streaming STT with semantic end-of-turn at `/api/asr-streaming` (words ~0.5 s behind the audio, the model's own pause prediction ends the turn). Compose: `deploy/vesta/moshi-server.docker-compose.yaml` → `/srv/ai/compose/moshi-server/` (`.env` holds `HUGGING_FACE_HUB_TOKEN`; the Hugging Face cache is shared with the Python TTS sidecar so `tts-1.6b` and the voices are not fetched twice; `stt-1b-en_fr-candle` downloads on first start). The image compiles the crate for `sm_86` (`CUDA_COMPUTE_CAP`, no GPU at build time); the first build takes ~15 minutes.
 
 ```bash
-mkdir -p /srv/ai/compose/moshi-server && cp ~/code/vesta-harness/deploy/vesta/moshi-server.docker-compose.yaml /srv/ai/compose/moshi-server/docker-compose.yaml
-cd /srv/ai/compose/moshi-server && docker compose up -d --build && docker compose logs -f   # until "Ready"/build_info answers
+mkdir -p /srv/ai/compose/moshi-server/voices/expresso && cp ~/code/vesta-harness/deploy/vesta/moshi-server.docker-compose.yaml /srv/ai/compose/moshi-server/docker-compose.yaml
+cp -r ~/code/vesta-harness/services/moshi-server/configs /srv/ai/compose/moshi-server/
+snap=$(ls -d /srv/ai/compose/kyutai-tts/cache/hub/models--kyutai--tts-voices/snapshots/* | head -1)
+cp "$snap"/expresso/ex03-ex01_calm_001_channel1_1143s.wav*.safetensors /srv/ai/compose/moshi-server/voices/expresso/   # only the voices we use: the full set is 901 embeddings on the GPU
+cd /srv/ai/compose/moshi-server && docker compose up -d --build && docker compose logs -f   # until build_info answers on 127.0.0.1:8092
 docker cp ~/code/vesta-harness/deploy/vesta/bin/vesta-moshi-check.py livekit-agent:/tmp/moshi-check.py
 docker exec livekit-agent python /tmp/moshi-check.py tts "Hello there, this is a streaming test."
 docker exec livekit-agent python /tmp/moshi-check.py stt /tmp/q2.wav
 ```
 
-The agent picks backends by environment (`deploy/vesta/livekit-voice.docker-compose.yml`): `TTS_BACKEND=moshi|openai`, `STT_BACKEND=moshi|sensevoice`, `KYUTAI_WS_URL` (default `ws://127.0.0.1:8092`; host networking, loopback only), `KYUTAI_PAUSE_HEAD` (0: 0.5 s, 1: 1 s, 2: 2 s pause ends the turn; default 1), `KYUTAI_FINAL_AFTER_SILENCE_S` (fallback, 1.2). With the moshi STT the SenseVoice sidecar stays up only for the "[tone: …]" notes: each finished utterance is sent there in the background and the note is appended to the next spoken turn if it arrives in time (`TONE_NOTES=0` disables). The Python TTS sidecar (`kyutai-tts`) and SenseVoice keep working as the fallback backends.
+The agent picks backends by environment (`deploy/vesta/livekit-voice.docker-compose.yml`): `TTS_BACKEND=moshi|openai`, `STT_BACKEND=moshi|sensevoice`, `KYUTAI_WS_URL` (default `ws://127.0.0.1:8092`; host networking, loopback only), `KYUTAI_PAUSE_HEAD` (0: 0.5 s, 1: 1 s, 2: 2 s pause ends the turn; default 1), `KYUTAI_FINAL_AFTER_SILENCE_S` (fallback, 1.2). With the moshi STT the SenseVoice sidecar stays up only for the "[tone: …]" notes: each finished utterance is sent there in the background and the note is appended to the next spoken turn if it arrives in time (`TONE_NOTES=0` disables). The Python TTS sidecar (`kyutai-tts`) is stopped while moshi-server runs (the 3060 cannot hold both); to fall back, stop moshi-server, start kyutai-tts, and set `TTS_BACKEND=openai`. SenseVoice stays up for tone notes and as the STT fallback.
 
 ## Vesta Voice preset
 

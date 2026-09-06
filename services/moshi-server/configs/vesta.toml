@@ -17,7 +17,10 @@ text_bos_token = 1
 
 [modules.tts_py.py]
 log_folder = "/tmp/moshi-logs"
-voice_folder = "hf-snapshot://kyutai/tts-voices/**/*.safetensors"
+# A local folder holding only the voices we use: the Hugging Face glob loads all
+# 901 embeddings onto the GPU (several GB on a 12 GB card). Populate it from the
+# shared cache (see deploy/vesta/README.md); paths below are relative to it.
+voice_folder = "/app/voices"
 default_voice = "expresso/ex03-ex01_calm_001_channel1_1143s.wav"
 # 2.0 is the value the distilled model was trained for; other values do not work.
 cfg_coef = 2.0
@@ -36,7 +39,8 @@ text_tokenizer_file = "hf://kyutai/stt-1b-en_fr-candle/tokenizer_en_fr_audio_800
 audio_tokenizer_file = "hf://kyutai/stt-1b-en_fr-candle/mimi-pytorch-e351c8d8@125.safetensors"
 # Words are emitted this many frames (80 ms each) behind the audio: 6 ≈ 0.5 s.
 asr_delay_in_tokens = 6
-batch_size = 8
+# Parallel STT streams; one per bound room.
+batch_size = 4
 conditioning_learnt_padding = true
 temperature = 0.0
 

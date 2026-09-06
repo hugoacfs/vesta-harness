@@ -23,6 +23,9 @@ services:
       - HF_HUB_CACHE=/app/cache/hub
     volumes:
       - /srv/ai/compose/kyutai-tts/cache:/app/cache
+      # Tuning without a rebuild: the config and the voice folder live beside the compose file.
+      - /srv/ai/compose/moshi-server/configs:/app/configs:ro
+      - /srv/ai/compose/moshi-server/voices:/app/voices:ro
     deploy:
       resources:
         reservations:
