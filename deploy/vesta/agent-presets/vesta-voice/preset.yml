@@ -1,0 +1,2 @@
+name: Vesta Voice
+description: "Lean preset for spoken sessions on the default lane (Qwen 27B): shell, files, search, background jobs, web search and the MCP servers; no delegation, planning, skills, todo or ask-user tools, so the request prefix is about half the size and the first spoken reply after a quiet spell arrives sooner."
