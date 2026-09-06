@@ -1,22 +1,22 @@
-/* Mic button: a round composer control; ember while a call is live. */
+/* Composer mic control: the 28px circle of the composer's own attach and
+   command controls (selector fill, primary glyph); ember while a call is live. */
 .mic {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
   corner-shape: round;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-specific-selector);
+  color: var(--dsw-alias-label-primary);
   cursor: pointer;
-  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out), color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+  transition: background-color 100ms ease;
 }
 
-.mic:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+.mic:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
 }
 
 .mic:focus-visible {
@@ -30,47 +30,53 @@
 }
 
 .mic:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
   cursor: default;
 }
 
-/* Call HUD: an in-flow bar in the input dock above the composer card, sized
-   like the goal bar (the composer card's width minus the dock insets) so it
-   takes layout space and never covers the transcript. */
-.hud {
+/* Call HUD: a card in the composer context stack, sized and dressed like the
+   goal bar (dock column = card cap minus four insets; hairline, r12, tip fill)
+   so the stack reads as one family. In-flow: the transcript shrinks above it. */
+.dock {
+  box-sizing: border-box;
+  width: calc(
+    100% -
+    var(--dsh-composer-side-clearance) -
+    var(--dsh-composer-side-clearance) -
+    var(--dsh-composer-dock-inset) -
+    var(--dsh-composer-dock-inset) -
+    var(--dsh-composer-dock-inset) -
+    var(--dsh-composer-dock-inset)
+  );
+  margin: 0 auto;
+}
+
+.bar {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
   max-width: calc(var(--dsh-composer-card-max-width) - 4 * var(--dsh-composer-dock-inset));
-  margin: 0 auto 8px;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: 16px;
-  background: var(--dsw-alias-bg-layer-2);
-  box-shadow: var(--dsw-elevation-panel);
+  min-height: 40px;
+  margin: 0 auto;
+  padding: 5px 5px 5px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-specific-tip);
   color: var(--dsw-alias-label-primary);
-  font-size: 13px;
 }
 
-.orbWrap {
-  position: relative;
-  flex: none;
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-}
-
+/* The ember orb: the agent's voice level drives its glow and size. */
 .orb {
-  width: 34px;
-  height: 34px;
+  flex: none;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   corner-shape: round;
   background: radial-gradient(circle at 36% 30%, #fff3d9 0%, #ffc46b 32%, #ff7847 68%, #ff4d6d 100%);
-  box-shadow: 0 0 calc(10px + var(--vesta-orb-level, 0) * 26px) var(--vesta-glow, rgba(255, 120, 71, 0.45));
-  transform: scale(calc(1 + var(--vesta-orb-level, 0) * 0.35));
+  box-shadow: 0 0 calc(6px + var(--vesta-orb-level, 0) * 18px) var(--vesta-glow, rgba(255, 120, 71, 0.45));
+  transform: scale(calc(1 + var(--vesta-orb-level, 0) * 0.3));
   transition: transform 80ms linear, box-shadow 120ms linear;
 }
 
@@ -79,7 +85,7 @@
 }
 
 .orb.listening {
-  box-shadow: 0 0 10px var(--vesta-glow, rgba(255, 120, 71, 0.45)), 0 0 0 4px rgba(66, 226, 156, 0.25);
+  box-shadow: 0 0 6px var(--vesta-glow, rgba(255, 120, 71, 0.45)), 0 0 0 3px rgba(66, 226, 156, 0.25);
 }
 
 @keyframes vesta-orb-think {
@@ -98,73 +104,153 @@
   }
 }
 
-.state {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+/* State label: the goal bar's 13/24 medium primary. */
+.label {
+  flex: none;
+  font-size: 13px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The microphone in use (or the problem with it), dimmed and truncated. */
+.hint {
   flex: 1;
-}
-
-.stateLabel {
-  font-family: var(--vesta-font-display, 'Space Grotesk', 'Inter', system-ui, sans-serif);
-  font-weight: 600;
-  font-size: 14px;
-  letter-spacing: -0.01em;
-}
-
-.stateHint {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  white-space: nowrap;
+  min-width: 0;
   overflow: hidden;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary-dimmed);
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.stateError {
+.hintError {
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* Input meter: five bars that light up with what the room hears from you. */
+.meter {
+  display: inline-flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.meterBar {
+  display: block;
+  width: 3px;
+  border-radius: 1.5px;
+  background: var(--dsw-alias-border-l4);
+  transition: background-color 60ms linear;
+}
+
+.meterBar:nth-child(1) { height: 5px; }
+.meterBar:nth-child(2) { height: 7px; }
+.meterBar:nth-child(3) { height: 9px; }
+.meterBar:nth-child(4) { height: 11px; }
+.meterBar:nth-child(5) { height: 14px; }
+
+.meterOn {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.meterOff {
+  opacity: 0.45;
 }
 
 .actions {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
-.action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 50%;
-  corner-shape: round;
-  background: var(--dsw-alias-interactive-bg-hover);
+/* Round 28px controls in the composer's control language. */
+.control,
+.splitMain,
+.splitCaret {
+  display: grid;
+  place-items: center;
+  height: 28px;
+  border: none;
+  background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
+  transition: background-color 100ms ease;
 }
 
-.action:hover {
-  background: var(--dsw-alias-interactive-bg-active);
+.control {
+  width: 28px;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-specific-selector);
 }
 
-.action:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
-  outline-offset: 2px;
+.control:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
 }
 
-.action.active {
-  background: var(--dsw-alias-interactive-bg-hover-accent);
+.control.active {
   color: var(--vesta-ember-1, #ffc46b);
 }
 
-.action.muted {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
+/* Mute + microphone picker: one capsule, the caret opens the device list. */
+.split {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-specific-selector);
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+}
+
+.splitMain {
+  width: 28px;
+  padding: 0;
+}
+
+.splitCaret {
+  width: 20px;
+  padding: 0 2px 0 0;
+  border-left: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.splitMain:hover,
+.splitCaret:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.split.muted {
   color: var(--dsw-alias-state-error-primary);
 }
 
-.action.end {
+/* End call: the composer's primary circle (34px, white glyph) in the error fill. */
+.end {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-state-error-primary);
-  color: #ffffff;
+  color: #fff;
+  cursor: pointer;
+  transition: filter 100ms ease;
+}
+
+.end:hover {
+  filter: brightness(1.1);
+}
+
+.control:focus-visible,
+.splitMain:focus-visible,
+.splitCaret:focus-visible,
+.end:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
 }

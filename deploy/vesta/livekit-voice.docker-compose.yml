@@ -38,6 +38,12 @@ services:
       - ASR_MODEL=iic/SenseVoiceSmall     # SenseVoice: STT + emotion + audio events (laughter)
       - ASR_DEVICE=cuda:0
       - ASR_LANGUAGE=en
+      # Second pass behind the streaming STT (/v1/audio/refine): Whisper for the text the brain
+      # receives, SenseVoice alongside for the tone note. Empty REFINE_MODEL disables it.
+      - REFINE_MODEL=large-v3-turbo
+      - REFINE_DEVICE=cuda
+      - REFINE_COMPUTE=int8_float16
+      - REFINE_PROMPT=Vesta, Qwen, LiveKit, Kyutai, vLLM, LiteLLM, Docker, tailnet, harness, SearXNG.
       - HF_HOME=/models/hf
     volumes:
       - /srv/ai/models/voice-agent/hf:/models/hf
@@ -85,6 +91,7 @@ services:
       - KYUTAI_WS_URL=ws://127.0.0.1:8092
       - KYUTAI_PAUSE_HEAD=1
       - TONE_NOTES=1
+      - STT_REFINE=1                        # each finished utterance re-read by Whisper (media /v1/audio/refine)
       - BRIDGE_GREETING=
     depends_on: [livekit-server, livekit-media]
 

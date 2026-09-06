@@ -1,4 +1,8 @@
-/** Inline glyphs for the voice controls (currentColor, decorative). */
+/**
+ * Inline glyphs for the voice controls, drawn on the 16-grid the harness icon
+ * set uses (filled paths, currentColor, decorative). The harness ships no
+ * microphone or handset glyph, so these live here.
+ */
 
 interface GlyphProps {
   size?: number
@@ -6,31 +10,31 @@ interface GlyphProps {
 
 /**
  * Microphone glyph.
- * @param props.size - square edge in px (default 18).
+ * @param props.size - square edge in px (default 16).
  * @returns the svg.
  */
-export function MicGlyph({ size = 18 }: GlyphProps) {
+export function MicGlyph({ size = 16 }: GlyphProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />
-      <path d="M5 11a7 7 0 0 0 14 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M12 18v3M9 21h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="5.6" y="1.4" width="4.8" height="8" rx="2.4" fill="currentColor" />
+      <path d="M3.3 7.6a4.7 4.7 0 0 0 9.4 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M8 12.3v2.2M5.6 14.5h4.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   )
 }
 
 /**
  * Muted microphone glyph.
- * @param props.size - square edge in px (default 18).
+ * @param props.size - square edge in px (default 16).
  * @returns the svg.
  */
-export function MicOffGlyph({ size = 18 }: GlyphProps) {
+export function MicOffGlyph({ size = 16 }: GlyphProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />
-      <path d="M5 11a7 7 0 0 0 14 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M12 18v3M9 21h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M4 4l16 16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="5.6" y="1.4" width="4.8" height="8" rx="2.4" fill="currentColor" />
+      <path d="M3.3 7.6a4.7 4.7 0 0 0 9.4 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M8 12.3v2.2M5.6 14.5h4.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M2.5 2.5l11 11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   )
 }
@@ -42,8 +46,8 @@ export function MicOffGlyph({ size = 18 }: GlyphProps) {
  */
 export function HeartGlyph({ size = 16 }: GlyphProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 21s-7.5-4.6-9.5-9.3C1.3 8.6 3.2 5 6.8 5c2 0 3.4 1.1 5.2 3 1.8-1.9 3.2-3 5.2-3 3.6 0 5.5 3.6 4.3 6.7C19.5 16.4 12 21 12 21z" />
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M8 14.2S3 11 1.7 7.9C.9 5.8 2.2 3.4 4.6 3.4c1.3 0 2.3.7 3.4 2 1.1-1.3 2.1-2 3.4-2 2.4 0 3.7 2.4 2.9 4.5C13 11 8 14.2 8 14.2z" />
     </svg>
   )
 }
@@ -55,8 +59,8 @@ export function HeartGlyph({ size = 16 }: GlyphProps) {
  */
 export function EndGlyph({ size = 16 }: GlyphProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M21.7 15.6l-2.9-2.9a1.5 1.5 0 0 0-2.1 0l-1.3 1.3a13.5 13.5 0 0 1-5.4-5.4l1.3-1.3a1.5 1.5 0 0 0 0-2.1L8.4 2.3a1.5 1.5 0 0 0-2.1 0L4.5 4.1C3 5.6 3.4 8.4 5.6 11.5c2.5 3.6 5.9 7 9.5 9.5 3.1 2.2 5.9 2.6 7.4 1.1l1.8-1.8a1.5 1.5 0 0 0 0-2.1z" transform="rotate(135 12 12)" />
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M8 5.2c-2.6 0-5 .8-6.9 2.3a1.3 1.3 0 0 0-.3 1.7l1 1.5c.3.5 1 .7 1.5.4l1.7-.9c.5-.2.7-.7.6-1.2l-.2-1.1c.8-.3 1.7-.5 2.6-.5s1.8.2 2.6.5l-.2 1.1c-.1.5.1 1 .6 1.2l1.7.9c.5.3 1.2.1 1.5-.4l1-1.5a1.3 1.3 0 0 0-.3-1.7C13 6 10.6 5.2 8 5.2z" />
     </svg>
   )
 }

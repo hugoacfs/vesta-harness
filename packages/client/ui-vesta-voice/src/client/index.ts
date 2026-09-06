@@ -18,7 +18,7 @@ import { createVoiceCallStore } from './store.ts'
 export type { CallHudInjected } from './CallHud.tsx'
 export type { MicButtonInjected } from './MicButton.tsx'
 export type { VoiceKey } from './locales.ts'
-export type { AgentState, CallStatus, VoiceCallState } from './store.ts'
+export type { AgentState, CallStatus, MicDevice, VoiceCallState } from './store.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -67,6 +67,7 @@ export function apply(ctx: ClientContext): void {
       return {
         end: () => calls.end(),
         toggleMute: () => calls.toggleMute(),
+        selectDevice: deviceId => calls.selectDevice(deviceId),
         setEmotion: enabled => calls.setEmotion(enabled),
       }
     },

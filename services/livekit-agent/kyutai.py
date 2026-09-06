@@ -225,17 +225,20 @@ class KyutaiChunkedStream(tts.ChunkedStream):
 
 # ---------------------------------------------------------------- STT
 class KyutaiSTT(stt.STT):
-    """tone_url: the SenseVoice sidecar's transcription endpoint; when set, each finished
-    utterance is also sent there and its "[tone: …]" note is handed to on_tone out of band,
-    so the transcript never waits for it."""
+    """refine_url: the media sidecar's second pass (/v1/audio/refine): once the streaming model
+    has ended an utterance, the same audio goes through Whisper for the text the brain receives
+    and through SenseVoice for the "[tone: …]" note, which reaches on_tone before the final
+    transcript is emitted. tone_url: the SenseVoice-only lookup used when refine is off (the
+    note then arrives out of band, and the streamed words are the transcript)."""
 
     def __init__(self, *, url: str, api_key: str = "public_token", language: str = "en",
-                 tone_url: str | None = None, on_tone=None) -> None:
+                 tone_url: str | None = None, refine_url: str | None = None, on_tone=None) -> None:
         super().__init__(capabilities=stt.STTCapabilities(streaming=True, interim_results=True, offline_recognize=False))
         self._url = url.rstrip("/")
         self._api_key = api_key
         self._language = language
         self._tone_url = tone_url
+        self._refine_url = refine_url
         self._on_tone = on_tone
 
     @property
@@ -248,10 +251,8 @@ class KyutaiSTT(stt.STT):
     def stream(self, *, language: NotGivenOr[str] = NOT_GIVEN, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS) -> stt.RecognizeStream:
         return KyutaiRecognizeStream(stt=self, conn_options=conn_options, language=self._language)
 
-    async def tone_of(self, pcm: np.ndarray) -> str | None:
-        """Ask the SenseVoice sidecar how the utterance sounded; None when unavailable or neutral."""
-        if not self._tone_url or len(pcm) < SAMPLE_RATE // 4:
-            return None
+    @staticmethod
+    def _wav_form(pcm: np.ndarray) -> aiohttp.FormData:
         buf = io.BytesIO()
         with wave.open(buf, "wb") as w:
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(SAMPLE_RATE)
@@ -259,15 +260,33 @@ class KyutaiSTT(stt.STT):
         form = aiohttp.FormData()
         form.add_field("file", buf.getvalue(), filename="utterance.wav", content_type="audio/wav")
         form.add_field("model", "whisper-1")
+        return form
+
+    async def tone_of(self, pcm: np.ndarray) -> str | None:
+        """Ask the SenseVoice sidecar how the utterance sounded; None when unavailable or neutral."""
+        if not self._tone_url or len(pcm) < SAMPLE_RATE // 4:
+            return None
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as http:
-                async with http.post(self._tone_url, data=form) as r:
+                async with http.post(self._tone_url, data=self._wav_form(pcm)) as r:
                     data = await r.json()
         except Exception as e:  # noqa: BLE001
             log.warning("tone lookup failed: %s", e)
             return None
         m = _TONE_NOTE.search(str(data.get("text", "")))
         return m.group(0) if m else None
+
+    async def refine(self, pcm: np.ndarray) -> tuple[str | None, str | None]:
+        """Second pass over one finished utterance: (text, note); either is None when the
+        sidecar has nothing better (no Whisper loaded, neutral tone, notes hidden)."""
+        if not self._refine_url or len(pcm) < SAMPLE_RATE // 4:
+            return None, None
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=REFINE_TIMEOUT_S + 1.0)) as http:
+            async with http.post(self._refine_url, data=self._wav_form(pcm)) as r:
+                data = await r.json()
+        text = str(data.get("text") or "").strip() or None
+        note = str(data.get("note") or "").strip() or None
+        return text, note
 
 
 # moshi-server drops an ASR socket that has carried no message for 120 s (batched_asr.rs,
@@ -276,6 +295,21 @@ class KyutaiSTT(stt.STT):
 # silence whenever the room has been quiet this long, and reopen the socket after any drop.
 STT_KEEPALIVE_S = float(os.environ.get("KYUTAI_STT_KEEPALIVE_S", "20"))
 _SILENCE_CHUNK = [0.0] * STT_CHUNK
+# The streaming model reports a word 0.5–1 s after it was spoken, so the audio kept for the
+# second pass starts this long before the first word: the whole onset of the utterance.
+LEAD_IN_SAMPLES = int(float(os.environ.get("KYUTAI_LEAD_IN_S", "1.5")) * SAMPLE_RATE)
+# The final transcript waits at most this long for the second pass (it usually finishes
+# inside the pause grace, because it starts when the pause is predicted).
+REFINE_TIMEOUT_S = float(os.environ.get("KYUTAI_REFINE_TIMEOUT_S", "1.5"))
+
+
+def _plausible(refined: str | None, streamed: str) -> bool:
+    """Accept the second pass unless it is empty or wildly different in length from the
+    streamed words (a hallucinated sentence over silence, or a truncated one)."""
+    if not refined:
+        return False
+    ratio = len(refined.split()) / max(1, len(streamed.split()))
+    return 0.5 <= ratio <= 2.5
 
 
 class KyutaiRecognizeStream(stt.RecognizeStream):
@@ -288,52 +322,96 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         self._last_word_at = 0.0
         self._utterance_start = 0.0
         self._pause_at: float | None = None   # when the pause head fired for the current utterance
-        self._audio: list[np.ndarray] = []   # the utterance so far, for the tone lookup
+        self._audio: list[np.ndarray] = []   # the utterance so far (from the lead-in on), for the second pass
+        self._lead: list[np.ndarray] = []    # rolling audio before the first word
+        self._lead_samples = 0
+        self._spec: asyncio.Task[tuple[str | None, str | None]] | None = None   # second pass started at the pause
+        self._spec_words = 0                 # how many words it covered
+        self._delivery: asyncio.Task[None] | None = None   # finals are delivered in order
         self._input_done = False             # the framework closed the input: no reconnects after this
 
     def _emit(self, kind: stt.SpeechEventType, text: str = "") -> None:
         ev = stt.SpeechEvent(type=kind, request_id="", alternatives=[stt.SpeechData(language=self._language, text=text)] if text or kind in (stt.SpeechEventType.INTERIM_TRANSCRIPT, stt.SpeechEventType.FINAL_TRANSCRIPT) else [])
         self._event_ch.send_nowait(ev)
 
+    def _start_refine(self) -> asyncio.Task[tuple[str | None, str | None]]:
+        audio = np.concatenate(self._audio) if self._audio else np.zeros(0, dtype=np.float32)
+        return asyncio.get_running_loop().create_task(self._kyutai.refine(audio))
+
     def _finalize(self, reason: str) -> None:
         if not self._words:
             return
         text = " ".join(self._words).strip()
+        words = len(self._words)
+        started = self._utterance_start
+        audio = np.concatenate(self._audio) if self._audio else np.zeros(0, dtype=np.float32)
+        spec = self._spec if self._spec is not None and self._spec_words == words else None
+        if self._spec is not None and spec is None:
+            self._spec.cancel()   # words came after the pause: that pass is stale
         self._words = []
         self._speech_started = False
         self._pause_at = None
-        audio = np.concatenate(self._audio) if self._audio else np.zeros(0, dtype=np.float32)
         self._audio = []
-        log.info("kyutai stt: final (%s) %.1fs after first word: %r", reason, time.monotonic() - self._utterance_start, text[:80])
-        self._emit(stt.SpeechEventType.FINAL_TRANSCRIPT, text)
+        self._spec = None
+        if not self._kyutai._refine_url:
+            log.info("kyutai stt: final (%s) %.1fs after first word: %r", reason, time.monotonic() - started, text[:80])
+            self._emit(stt.SpeechEventType.FINAL_TRANSCRIPT, text)
+            self._emit(stt.SpeechEventType.END_OF_SPEECH)
+            if self._kyutai._tone_url and self._kyutai._on_tone is not None:
+                async def _tone() -> None:
+                    note = await self._kyutai.tone_of(audio)
+                    if note:
+                        self._kyutai._on_tone(note)
+                asyncio.get_running_loop().create_task(_tone())
+            return
+        pending = spec or asyncio.get_running_loop().create_task(self._kyutai.refine(audio))
+        self._delivery = asyncio.get_running_loop().create_task(self._deliver(self._delivery, text, pending, reason, started))
+
+    async def _deliver(self, previous: asyncio.Task[None] | None, text: str, pending: asyncio.Task[tuple[str | None, str | None]], reason: str, started: float) -> None:
+        if previous is not None:
+            await asyncio.wait({previous})
+        t0 = time.monotonic()
+        refined: str | None = None
+        note: str | None = None
+        try:
+            refined, note = await asyncio.wait_for(pending, REFINE_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            log.warning("kyutai stt: second pass took over %.1fs; using the streamed words", REFINE_TIMEOUT_S)
+        except Exception as e:  # noqa: BLE001
+            log.warning("kyutai stt: second pass failed (%s); using the streamed words", e)
+        final = refined if _plausible(refined, text) else text
+        log.info("kyutai stt: final (%s) %.1fs after first word, second pass waited %dms: %r%s",
+                 reason, time.monotonic() - started, int((time.monotonic() - t0) * 1000), final[:80],
+                 "" if final == text else f" (streamed: {text[:60]!r})")
+        if note and self._kyutai._on_tone is not None:
+            self._kyutai._on_tone(note)   # before the transcript, so the note rides on this turn
+        self._emit(stt.SpeechEventType.FINAL_TRANSCRIPT, final)
         self._emit(stt.SpeechEventType.END_OF_SPEECH)
-        if self._kyutai._tone_url and self._kyutai._on_tone is not None:
-            async def _tone() -> None:
-                note = await self._kyutai.tone_of(audio)
-                if note:
-                    self._kyutai._on_tone(note)
-            asyncio.get_running_loop().create_task(_tone())
 
     async def _run(self) -> None:
         """One recognition stream for the life of the call: the socket to moshi-server is
         reopened after any drop, so the framework never sees a dead pump."""
         attempt = 0
-        while not self._input_done:
-            try:
-                await self._session()
-            except (websockets.exceptions.WebSocketException, OSError, APIConnectionError, APIError) as e:
-                if self._input_done:
-                    return
-                attempt += 1
-                delay = min(5.0, 0.5 * attempt)
-                log.warning("kyutai stt: connection lost (%s); reopening in %.1fs", e, delay)
-                self._finalize("reconnect")
-                await asyncio.sleep(delay)
-                continue
-            if not self._input_done:
-                attempt = 0
-                log.info("kyutai stt: server closed the stream; reopening")
-                await asyncio.sleep(0.2)
+        try:
+            while not self._input_done:
+                try:
+                    await self._session()
+                except (websockets.exceptions.WebSocketException, OSError, APIConnectionError, APIError) as e:
+                    if self._input_done:
+                        return
+                    attempt += 1
+                    delay = min(5.0, 0.5 * attempt)
+                    log.warning("kyutai stt: connection lost (%s); reopening in %.1fs", e, delay)
+                    self._finalize("reconnect")
+                    await asyncio.sleep(delay)
+                    continue
+                if not self._input_done:
+                    attempt = 0
+                    log.info("kyutai stt: server closed the stream; reopening")
+                    await asyncio.sleep(0.2)
+        finally:
+            if self._delivery is not None and not self._delivery.done():
+                await asyncio.wait({self._delivery}, timeout=REFINE_TIMEOUT_S + 0.5)
 
     async def _session(self) -> None:
         url = f"{self._kyutai._url}/api/asr-streaming"
@@ -365,10 +443,13 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                     if frame.num_channels > 1:
                         samples = samples.reshape(-1, frame.num_channels).mean(axis=1)
                     pending = np.concatenate([pending, samples])
-                    if self._speech_started or len(self._audio) < 12:
-                        self._audio.append(samples)          # keep ~1 s of lead-in before the first word
-                        if not self._speech_started and len(self._audio) > 12:
-                            self._audio = self._audio[-12:]
+                    if self._speech_started:
+                        self._audio.append(samples)
+                    else:
+                        self._lead.append(samples)
+                        self._lead_samples += len(samples)
+                        while self._lead and self._lead_samples - len(self._lead[0]) >= LEAD_IN_SAMPLES:
+                            self._lead_samples -= len(self._lead.pop(0))
                     while len(pending) >= STT_CHUNK:
                         chunk, pending = pending[:STT_CHUNK], pending[STT_CHUNK:]
                         await ws.send(msgpack.packb({"type": "Audio", "pcm": chunk.tolist()}, use_single_float=True))
@@ -389,6 +470,9 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                         if not self._speech_started:
                             self._speech_started = True
                             self._utterance_start = time.monotonic()
+                            self._audio = self._lead   # the onset was spoken before this word arrived
+                            self._lead = []
+                            self._lead_samples = 0
                             self._emit(stt.SpeechEventType.START_OF_SPEECH)
                         self._words.append(word)
                         self._last_word_at = time.monotonic()
@@ -397,6 +481,10 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                         prs = msg.get("prs") or []
                         if self._words and self._pause_at is None and len(prs) > PAUSE_HEAD and prs[PAUSE_HEAD] > PAUSE_THRESHOLD:
                             self._pause_at = time.monotonic()   # the watchdog finalizes after the grace
+                            if self._kyutai._refine_url:
+                                # Start the second pass now; the grace usually covers it.
+                                self._spec = self._start_refine()
+                                self._spec_words = len(self._words)
                     elif kind == "Error":
                         raise APIError(f"kyutai stt: {msg.get('message')}")
 

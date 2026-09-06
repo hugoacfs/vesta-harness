@@ -2,24 +2,29 @@
  * The voice call controller (apply world): owns the single LiveKit `Room`,
  * fetches the Session's room token from the Host, publishes the microphone,
  * plays the agent's audio, mirrors the agent's published state and audio level
- * into the store, and relays the perception toggle. Components never see the
- * Room; they receive plain callbacks and store state.
+ * into the store, meters the local microphone, switches capture devices, and
+ * relays the perception toggle. Components never see the Room; they receive
+ * plain callbacks and store state.
  */
 import {
   createAudioAnalyser,
+  LocalAudioTrack,
   RemoteAudioTrack,
   Room,
   RoomEvent,
+  Track,
   type Participant,
   type RemoteTrack,
 } from 'livekit-client'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
-import type { AgentState, createVoiceCallStore } from './store.ts'
+import type { AgentState, createVoiceCallStore, MicDevice } from './store.ts'
 
 /** Host route minting a room token for one Session. */
 export const TOKEN_PATH = '/api/vesta/voice/token'
 /** Host route reading and writing the STT sidecar's perception flag. */
 export const EMOTION_PATH = '/api/vesta/voice/emotion'
+/** localStorage key remembering the chosen microphone across calls. */
+export const MIC_DEVICE_KEY = 'vesta.voice.micDeviceId'
 
 const AGENT_STATE_ATTRIBUTE = 'lk.agent.state'
 const AGENT_STATES: readonly AgentState[] = ['initializing', 'listening', 'thinking', 'speaking', 'idle']
@@ -38,6 +43,11 @@ interface EmotionResponse {
   available?: boolean
 }
 
+/** A level watcher over one audio track: stop() releases the analyser and the timer. */
+interface LevelWatch {
+  stop: () => Promise<void>
+}
+
 /** Resolve the browser's Host base with the connection carrier's null-origin fallback. */
 function hostBase(): string {
   const origin = (globalThis as { location?: { origin?: string } }).location?.origin
@@ -52,14 +62,58 @@ function agentStateOf(value: string | undefined): AgentState | undefined {
   return AGENT_STATES.find(state => state === value)
 }
 
+function readPreferredMic(): string | undefined {
+  try {
+    return globalThis.localStorage.getItem(MIC_DEVICE_KEY) ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writePreferredMic(id: string): void {
+  try {
+    globalThis.localStorage.setItem(MIC_DEVICE_KEY, id)
+  } catch {
+    // Storage may be unavailable (private mode); the choice then lasts for the call.
+  }
+}
+
+/**
+ * Meter one track into a callback, throttled and change-filtered.
+ * @param track - a local or remote audio track.
+ * @param onLevel - receives 0..1 levels.
+ * @returns the watcher, or undefined when the browser has no AudioContext.
+ */
+function watchLevel(track: LocalAudioTrack | RemoteAudioTrack, onLevel: (level: number) => void): LevelWatch | undefined {
+  try {
+    const { calculateVolume, cleanup } = createAudioAnalyser(track, { smoothingTimeConstant: 0.6 })
+    let last = 0
+    const timer = setInterval(() => {
+      const level = Math.min(1, calculateVolume() * 4)
+      if (Math.abs(level - last) < 0.02) return
+      last = level
+      onLevel(level)
+    }, LEVEL_INTERVAL_MS)
+    return {
+      stop: async () => {
+        clearInterval(timer)
+        await cleanup()
+      },
+    }
+  } catch {
+    // The analyser is decorative; a browser without AudioContext keeps the static orb.
+    return undefined
+  }
+}
+
 /** One active call at a time, bound to the Session whose mic button started it. */
 export class VoiceCallController {
   private actions: Actions | undefined
   private room: Room | undefined
   private sessionId: string | undefined
   private audio: HTMLMediaElement[] = []
-  private levelTimer: ReturnType<typeof setInterval> | undefined
-  private stopAnalyser: (() => Promise<void>) | undefined
+  private agentLevel: LevelWatch | undefined
+  private micLevel: LevelWatch | undefined
   /** True while a failed start is leaving the room, so its Disconnected event keeps the error state. */
   private failing = false
 
@@ -87,13 +141,25 @@ export class VoiceCallController {
     if (actions === undefined) return
     actions.connecting(sessionId)
     this.sessionId = sessionId
-    const room = new Room({ adaptiveStream: false, dynacast: false })
+    const preferred = readPreferredMic()
+    const room = new Room({
+      adaptiveStream: false,
+      dynacast: false,
+      audioCaptureDefaults: preferred === undefined ? {} : { deviceId: preferred },
+    })
     this.room = room
     room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => { this.onTrack(track) })
     room.on(RoomEvent.ParticipantAttributesChanged, (changed: Record<string, string>, participant: Participant) => {
       if (participant.isLocal) return
       const state = agentStateOf(changed[AGENT_STATE_ATTRIBUTE])
       if (state !== undefined) actions.agentState(state)
+    })
+    room.on(RoomEvent.MediaDevicesError, (error: Error) => { actions.deviceError(error.message) })
+    room.on(RoomEvent.MediaDevicesChanged, () => { void this.refreshDevices() })
+    room.on(RoomEvent.ActiveDeviceChanged, (kind: MediaDeviceKind) => {
+      if (kind !== 'audioinput') return
+      void this.refreshDevices()
+      this.watchMic()
     })
     // A failed start disconnects deliberately; that disconnect must not wipe
     // the error the HUD is about to show.
@@ -111,6 +177,9 @@ export class VoiceCallController {
         if (state !== undefined) actions.agentState(state)
       }
       actions.live()
+      actions.deviceError(null)
+      this.watchMic()
+      void this.refreshDevices()
       void this.refreshEmotion()
     } catch (error) {
       actions.failed(messageOf(error))
@@ -141,6 +210,26 @@ export class VoiceCallController {
     const muted = room.localParticipant.isMicrophoneEnabled
     await room.localParticipant.setMicrophoneEnabled(!muted)
     actions.muted(muted)
+    if (!muted) this.watchMic()
+  }
+
+  /**
+   * Capture from another microphone for the rest of this call and later ones.
+   * @param deviceId - a browser `MediaDeviceInfo.deviceId` from the store's device list.
+   */
+  async selectDevice(deviceId: string): Promise<void> {
+    const room = this.room
+    const actions = this.actions
+    if (room === undefined || actions === undefined) return
+    try {
+      await room.switchActiveDevice('audioinput', deviceId, true)
+      writePreferredMic(deviceId)
+      actions.deviceError(null)
+    } catch (error) {
+      actions.deviceError(messageOf(error))
+    }
+    await this.refreshDevices()
+    this.watchMic()
   }
 
   /**
@@ -176,42 +265,61 @@ export class VoiceCallController {
     }
   }
 
+  /** The microphone track the call publishes, once it exists. */
+  private micTrack(): LocalAudioTrack | undefined {
+    const track = this.room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+    return track instanceof LocalAudioTrack ? track : undefined
+  }
+
+  /**
+   * List the browser's microphones and mark the one the call captures from.
+   * Labels need capture permission, which the live call has granted.
+   */
+  private async refreshDevices(): Promise<void> {
+    const room = this.room
+    const actions = this.actions
+    if (room === undefined || actions === undefined) return
+    let devices: MicDevice[] = []
+    try {
+      const list = await Room.getLocalDevices('audioinput', false)
+      devices = list.map(device => ({ id: device.deviceId, label: device.label }))
+    } catch {
+      // Enumeration can be refused (no permission yet); the list stays empty.
+    }
+    if (this.room !== room) return
+    const active = room.getActiveDevice('audioinput') ?? this.micTrack()?.mediaStreamTrack.getSettings().deviceId ?? null
+    actions.devices(devices, active)
+  }
+
+  /** Meter the microphone track (again, after a device switch replaces its stream). */
+  private watchMic(): void {
+    const actions = this.actions
+    const track = this.micTrack()
+    if (actions === undefined || track === undefined) return
+    const previous = this.micLevel
+    this.micLevel = undefined
+    if (previous !== undefined) void previous.stop()
+    this.micLevel = watchLevel(track, (level) => { actions.micLevel(level) })
+  }
+
   private onTrack(track: RemoteTrack): void {
     if (!(track instanceof RemoteAudioTrack)) return
     const element = track.attach()
     element.style.display = 'none'
     document.body.appendChild(element)
     this.audio.push(element)
-    void this.watchLevel(track)
-  }
-
-  private async watchLevel(track: RemoteAudioTrack): Promise<void> {
     const actions = this.actions
-    if (actions === undefined || this.levelTimer !== undefined) return
-    try {
-      const { calculateVolume, cleanup } = createAudioAnalyser(track, { smoothingTimeConstant: 0.6 })
-      this.stopAnalyser = cleanup
-      let last = 0
-      this.levelTimer = setInterval(() => {
-        const level = Math.min(1, calculateVolume() * 4)
-        if (Math.abs(level - last) < 0.02) return
-        last = level
-        actions.level(level)
-      }, LEVEL_INTERVAL_MS)
-    } catch {
-      // The analyser is decorative; a browser without AudioContext keeps the static orb.
+    if (actions !== undefined && this.agentLevel === undefined) {
+      this.agentLevel = watchLevel(track, (level) => { actions.level(level) })
     }
   }
 
   private async teardown(keepError = false): Promise<void> {
-    if (this.levelTimer !== undefined) {
-      clearInterval(this.levelTimer)
-      this.levelTimer = undefined
-    }
-    if (this.stopAnalyser !== undefined) {
-      const stop = this.stopAnalyser
-      this.stopAnalyser = undefined
-      await stop()
+    const watches = [this.agentLevel, this.micLevel]
+    this.agentLevel = undefined
+    this.micLevel = undefined
+    for (const watch of watches) {
+      if (watch !== undefined) await watch.stop()
     }
     for (const element of this.audio.splice(0)) element.remove()
     this.room = undefined

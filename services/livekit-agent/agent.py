@@ -67,6 +67,8 @@ STT_BACKEND = os.environ.get("STT_BACKEND", "sensevoice").strip().lower()
 KYUTAI_WS_URL = os.environ.get("KYUTAI_WS_URL", "ws://127.0.0.1:8092")
 KYUTAI_API_KEY = os.environ.get("KYUTAI_API_KEY", "public_token")
 TONE_NOTES = os.environ.get("TONE_NOTES", "1").strip() not in ("0", "false", "no", "")
+# Second pass (Whisper on the media sidecar) for the text of each finished utterance.
+STT_REFINE = os.environ.get("STT_REFINE", "1") == "1"
 MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "5"))
 
 # Vesta Harness bridge. Empty URL = direct mode for every room.
@@ -795,7 +797,8 @@ async def entrypoint(ctx: JobContext) -> None:
                 bridge.tone_note = note
 
         stt_engine = KyutaiSTT(url=KYUTAI_WS_URL, api_key=KYUTAI_API_KEY, language="en",
-                               tone_url=f"{MEDIA_URL}/audio/transcriptions" if TONE_NOTES else None, on_tone=_tone)
+                               tone_url=f"{MEDIA_URL}/audio/transcriptions" if TONE_NOTES else None,
+                               refine_url=f"{MEDIA_URL}/audio/refine" if STT_REFINE else None, on_tone=_tone)
     else:
         stt_engine = openai.STT(model="whisper-1", language="en", base_url=MEDIA_URL, api_key="not-needed")
     if TTS_BACKEND == "moshi":
