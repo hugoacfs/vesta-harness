@@ -769,7 +769,10 @@ async def entrypoint(ctx: JobContext) -> None:
         llm=brain,
         tts=tts_engine,
         vad=silero.VAD.load(),
-        turn_detection=EnglishModel(),
+        # With the streaming STT its pause prediction ends the turn (END_OF_SPEECH after the
+        # final transcript); a late word after a VAD-driven commit would otherwise be held as the
+        # start of the next turn and stall the reply. The batch STT keeps the semantic model.
+        turn_detection="stt" if STT_BACKEND == "moshi" else EnglishModel(),
         allow_interruptions=True,          # barge-in: user speech cuts off the reply
         min_interruption_duration=MIN_INTERRUPTION_S,
         min_endpointing_delay=MIN_ENDPOINTING_S,
