@@ -7,6 +7,7 @@
  * plain callbacks and store state.
  */
 import {
+  ConnectionQuality,
   createAudioAnalyser,
   LocalAudioTrack,
   RemoteAudioTrack,
@@ -17,7 +18,7 @@ import {
   type RemoteTrack,
 } from 'livekit-client'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
-import type { AgentState, createVoiceCallStore, MicDevice } from './store.ts'
+import type { AgentState, createVoiceCallStore, MicDevice, SignalState } from './store.ts'
 
 /** Host route minting a room token for one Session. */
 export const TOKEN_PATH = '/api/vesta/voice/token'
@@ -25,10 +26,15 @@ export const TOKEN_PATH = '/api/vesta/voice/token'
 export const EMOTION_PATH = '/api/vesta/voice/emotion'
 /** localStorage key remembering the chosen microphone across calls. */
 export const MIC_DEVICE_KEY = 'vesta.voice.micDeviceId'
+/** localStorage key (value `1`) that prints the receiver stats to the console once a second. */
+export const DEBUG_KEY = 'vesta.voice.debug'
 
 const AGENT_STATE_ATTRIBUTE = 'lk.agent.state'
 const AGENT_STATES: readonly AgentState[] = ['initializing', 'listening', 'thinking', 'speaking', 'idle']
 const LEVEL_INTERVAL_MS = 66
+const STATS_INTERVAL_MS = 1000
+/** Opus decodes at 48 kHz, which is the unit of the receiver's concealed-sample counters. */
+const RECEIVER_SAMPLE_RATE = 48000
 
 type Actions = BoundActions<ReturnType<typeof createVoiceCallStore>>
 
@@ -60,6 +66,24 @@ function messageOf(error: unknown): string {
 
 function agentStateOf(value: string | undefined): AgentState | undefined {
   return AGENT_STATES.find(state => state === value)
+}
+
+function qualityOf(quality: ConnectionQuality): SignalState['quality'] {
+  switch (quality) {
+    case ConnectionQuality.Excellent: return 'excellent'
+    case ConnectionQuality.Good: return 'good'
+    case ConnectionQuality.Poor: return 'poor'
+    case ConnectionQuality.Lost: return 'lost'
+    default: return 'unknown'
+  }
+}
+
+function debugEnabled(): boolean {
+  try {
+    return globalThis.localStorage.getItem(DEBUG_KEY) === '1'
+  } catch {
+    return false
+  }
 }
 
 function readPreferredMic(): string | undefined {
@@ -114,6 +138,7 @@ export class VoiceCallController {
   private audio: HTMLMediaElement[] = []
   private agentLevel: LevelWatch | undefined
   private micLevel: LevelWatch | undefined
+  private statsTimer: ReturnType<typeof setInterval> | undefined
   /** True while a failed start is leaving the room, so its Disconnected event keeps the error state. */
   private failing = false
 
@@ -155,6 +180,9 @@ export class VoiceCallController {
       if (state !== undefined) actions.agentState(state)
     })
     room.on(RoomEvent.MediaDevicesError, (error: Error) => { actions.deviceError(error.message) })
+    room.on(RoomEvent.ConnectionQualityChanged, (quality: ConnectionQuality, participant: Participant) => {
+      if (participant.isLocal) actions.signal({ quality: qualityOf(quality) })
+    })
     room.on(RoomEvent.MediaDevicesChanged, () => { void this.refreshDevices() })
     room.on(RoomEvent.ActiveDeviceChanged, (kind: MediaDeviceKind) => {
       if (kind !== 'audioinput') return
@@ -311,10 +339,49 @@ export class VoiceCallController {
     const actions = this.actions
     if (actions !== undefined && this.agentLevel === undefined) {
       this.agentLevel = watchLevel(track, (level) => { actions.level(level) })
+      this.watchSignal(track, actions)
     }
   }
 
+  /**
+   * Sample the receiver's own account of Vesta's audio once a second: what the
+   * jitter buffer concealed, packets lost, jitter. A dropout that shows here is
+   * the network's; one that does not is upstream of the browser.
+   */
+  private watchSignal(track: RemoteAudioTrack, actions: Actions): void {
+    if (this.statsTimer !== undefined) clearInterval(this.statsTimer)
+    let concealedBase: number | undefined
+    let eventsBase: number | undefined
+    let lostBase: number | undefined
+    const debug = debugEnabled()
+    this.statsTimer = setInterval(() => {
+      void track.getReceiverStats().then((stats) => {
+        if (stats === undefined) return
+        const concealed = stats.concealedSamples ?? 0
+        const events = stats.concealmentEvents ?? 0
+        const lost = stats.packetsLost ?? 0
+        concealedBase ??= concealed
+        eventsBase ??= events
+        lostBase ??= lost
+        const patch: Partial<SignalState> = {
+          concealedMs: Math.round((concealed - concealedBase) / RECEIVER_SAMPLE_RATE * 1000),
+          concealmentEvents: events - eventsBase,
+          packetsLost: lost - lostBase,
+          jitterMs: Math.round((stats.jitter ?? 0) * 1000),
+        }
+        actions.signal(patch)
+        if (debug) console.info('[vesta-voice] receiver', patch)
+      }).catch(() => {
+        // Stats are diagnostic only; a browser that refuses them keeps the call.
+      })
+    }, STATS_INTERVAL_MS)
+  }
+
   private async teardown(keepError = false): Promise<void> {
+    if (this.statsTimer !== undefined) {
+      clearInterval(this.statsTimer)
+      this.statsTimer = undefined
+    }
     const watches = [this.agentLevel, this.micLevel]
     this.agentLevel = undefined
     this.micLevel = undefined

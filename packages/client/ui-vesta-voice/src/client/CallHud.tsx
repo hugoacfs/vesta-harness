@@ -60,6 +60,7 @@ export function CallHud({ t, sessionId, useStore, end, toggleMute, selectDevice,
   const devices = useStore(s => s.devices)
   const deviceId = useStore(s => s.deviceId)
   const deviceError = useStore(s => s.deviceError)
+  const signal = useStore(s => s.signal)
   const error = useStore(s => s.error)
   const [deviceMenu, setDeviceMenu] = useState(false)
   if (owner === null || owner !== String(sessionId) || status === 'idle') return null
@@ -71,6 +72,7 @@ export function CallHud({ t, sessionId, useStore, end, toggleMute, selectDevice,
     : devices.map(device => ({ id: device.id, label: device.label || t('hud.deviceDefault') }))
   const problem = status === 'error' && error !== null ? error : deviceError
   const muteLabel = muted ? t('hud.unmute') : t('hud.mute')
+  const signalTitle = `${t('hud.signal')}: ${signal.quality} · concealed ${String(signal.concealedMs)} ms in ${String(signal.concealmentEvents)} events · lost ${String(signal.packetsLost)} · jitter ${String(signal.jitterMs)} ms`
   const toneLabel = t(emotion ? 'hud.emotionOn' : 'hud.emotionOff')
   return (
     <div className={css.dock}>
@@ -87,6 +89,11 @@ export function CallHud({ t, sessionId, useStore, end, toggleMute, selectDevice,
           {METER_STEPS.map(step => (
             <span key={step} className={clsx(css.meterBar, !muted && micLevel >= step && css.meterOn)} />
           ))}
+        </span>
+        <span className={clsx(css.signal, css[`signal_${signal.quality}`])} role="img" aria-label={signalTitle} title={signalTitle}>
+          <span className={css.signalBar} />
+          <span className={css.signalBar} />
+          <span className={css.signalBar} />
         </span>
         <div className={css.actions}>
           <div className={clsx(css.split, muted && css.muted)}>

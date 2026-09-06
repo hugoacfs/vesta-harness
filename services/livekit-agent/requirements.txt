@@ -10,3 +10,4 @@ httpx>=0.27
 aiohttp>=3.9
 msgpack>=1.0
 websockets>=13
+audiotsm>=0.1.2

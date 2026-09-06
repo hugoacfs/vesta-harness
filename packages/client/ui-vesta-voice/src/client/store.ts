@@ -11,6 +11,20 @@ export type CallStatus = 'idle' | 'connecting' | 'live' | 'error'
 /** The agent's published state (`lk.agent.state`), plus `unknown` before the first publication. */
 export type AgentState = 'unknown' | 'initializing' | 'listening' | 'thinking' | 'speaking' | 'idle'
 
+/** The browser's view of the audio path from Vesta: connection quality and what the jitter buffer had to hide. */
+export interface SignalState {
+  /** LiveKit connection quality for this browser (`unknown` before the first report). */
+  quality: 'unknown' | 'excellent' | 'good' | 'poor' | 'lost'
+  /** Audio the receiver had to conceal since the call started, in ms. */
+  concealedMs: number
+  /** Distinct concealment episodes since the call started. */
+  concealmentEvents: number
+  /** Packets lost since the call started. */
+  packetsLost: number
+  /** Current inter-arrival jitter, in ms. */
+  jitterMs: number
+}
+
 /** One microphone the browser can capture from. */
 export interface MicDevice {
   id: string
@@ -39,6 +53,8 @@ export interface VoiceCallState {
   deviceId: string | null
   /** The browser's capture error text (permission, device in use); null when capture works. */
   deviceError: string | null
+  /** Downlink health, for telling a network dropout from a server-side one. */
+  signal: SignalState
   /** Failure text (not localized: error-surface policy). */
   error: string | null
 }
@@ -54,8 +70,13 @@ type VoiceCallActions = {
   micLevel: (draft: VoiceCallState, level: number) => void
   devices: (draft: VoiceCallState, devices: readonly MicDevice[], activeId: string | null) => void
   deviceError: (draft: VoiceCallState, message: string | null) => void
+  signal: (draft: VoiceCallState, patch: Partial<SignalState>) => void
   failed: (draft: VoiceCallState, message: string) => void
   ended: (draft: VoiceCallState) => void
+}
+
+function initialSignal(): SignalState {
+  return { quality: 'unknown', concealedMs: 0, concealmentEvents: 0, packetsLost: 0, jitterMs: 0 }
 }
 
 function initialState(): VoiceCallState {
@@ -71,6 +92,7 @@ function initialState(): VoiceCallState {
     devices: [],
     deviceId: null,
     deviceError: null,
+    signal: initialSignal(),
     error: null,
   }
 }
@@ -93,6 +115,7 @@ export function createVoiceCallStore(): EngineStoreHandle<VoiceCallState, VoiceC
         d.devices = []
         d.deviceId = null
         d.deviceError = null
+        d.signal = initialSignal()
         d.error = null
       },
       live: (d) => { d.status = 'live' },
@@ -112,6 +135,7 @@ export function createVoiceCallStore(): EngineStoreHandle<VoiceCallState, VoiceC
         d.deviceId = activeId
       },
       deviceError: (d, message: string | null) => { d.deviceError = message },
+      signal: (d, patch: Partial<SignalState>) => { Object.assign(d.signal, patch) },
       failed: (d, message: string) => {
         d.status = 'error'
         d.error = message

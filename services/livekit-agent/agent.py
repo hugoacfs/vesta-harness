@@ -789,6 +789,7 @@ async def entrypoint(ctx: JobContext) -> None:
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
 
+    vad = silero.VAD.load()
     if STT_BACKEND == "moshi":
         from kyutai import KyutaiSTT
 
@@ -798,7 +799,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
         stt_engine = KyutaiSTT(url=KYUTAI_WS_URL, api_key=KYUTAI_API_KEY, language="en",
                                tone_url=f"{MEDIA_URL}/audio/transcriptions" if TONE_NOTES else None,
-                               refine_url=f"{MEDIA_URL}/audio/refine" if STT_REFINE else None, on_tone=_tone)
+                               refine_url=f"{MEDIA_URL}/audio/refine" if STT_REFINE else None, on_tone=_tone,
+                               vad=vad)
     else:
         stt_engine = openai.STT(model="whisper-1", language="en", base_url=MEDIA_URL, api_key="not-needed")
     if TTS_BACKEND == "moshi":
@@ -817,7 +819,7 @@ async def entrypoint(ctx: JobContext) -> None:
         stt=stt_engine,
         llm=brain,
         tts=tts_engine,
-        vad=silero.VAD.load(),
+        vad=vad,
         # With the streaming STT its pause prediction ends the turn (END_OF_SPEECH after the
         # final transcript); a late word after a VAD-driven commit would otherwise be held as the
         # start of the next turn and stall the reply. The batch STT keeps the semantic model.
@@ -836,6 +838,9 @@ async def entrypoint(ctx: JobContext) -> None:
         room_input_options=RoomInputOptions(close_on_disconnect=False),
     )
     _follow_callers(ctx, session)
+    if hasattr(stt_engine, "set_agent_speaking"):
+        # The listener gate (kyutai.py) holds room audio while Vesta speaks and the caller is silent.
+        session.on("agent_state_changed", lambda ev: stt_engine.set_agent_speaking(ev.new_state == "speaking"))
     if bridge is not None:
         bridge.attach(session)   # passive speech and approval questions need the running session
     greeting = BRIDGE_GREETING if bridge is not None else GREETING

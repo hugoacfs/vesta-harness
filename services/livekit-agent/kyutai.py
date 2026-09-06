@@ -35,7 +35,7 @@ import aiohttp
 import msgpack
 import numpy as np
 import websockets
-from livekit.agents import APIConnectionError, APIError, stt, tts, utils
+from livekit.agents import APIConnectionError, APIError, stt, tts, utils, vad as lk_vad
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions, NotGivenOr, NOT_GIVEN
 from livekit.agents.utils import aio
 
@@ -62,6 +62,24 @@ def _headers(api_key: str) -> dict[str, str]:
     return {"kyutai-api-key": api_key}
 
 
+# Playback pacing (see _Pacer): playback audio held before the first push, and the buffered lead
+# below/above which the speed slides between 1.0 and TTS_SPEED. TTS_PREROLL_S=0 and
+# TTS_LEAD_LOW_S=0 turn the pacing off.
+TTS_PREROLL_S = float(os.environ.get("TTS_PREROLL_S", "0.35"))
+TTS_LEAD_LOW_S = float(os.environ.get("TTS_LEAD_LOW_S", "0.15"))
+TTS_LEAD_HIGH_S = float(os.environ.get("TTS_LEAD_HIGH_S", "0.5"))
+# wsola: pitch-preserving time stretch (audiotsm); resample: the old linear resample (pitch follows speed).
+TTS_STRETCH = os.environ.get("TTS_STRETCH", "wsola").strip().lower()
+STARVE_LEAD_S = 0.02    # the playout buffer is considered empty below this lead
+TEXT_GAP_S = 0.2        # a pause in the model's words longer than this is counted as a text gap
+
+try:
+    from audiotsm import wsola as _wsola
+    from audiotsm.io.array import ArrayReader as _ArrayReader, ArrayWriter as _ArrayWriter
+except Exception:  # noqa: BLE001 — the stretch falls back to resampling
+    _wsola = None
+
+
 def _resample_factor(pcm: np.ndarray, speed: float) -> np.ndarray:
     """Plain resample by 1/speed (pitch follows speed, like the WAV sidecar did)."""
     if speed == 1.0 or len(pcm) == 0:
@@ -74,6 +92,133 @@ def _resample_factor(pcm: np.ndarray, speed: float) -> np.ndarray:
 
 def _to_s16(pcm: np.ndarray) -> bytes:
     return (np.clip(pcm, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+
+
+class _Stretcher:
+    """Speed up speech by a factor that can change between chunks: WSOLA keeps the pitch
+    (the resample fallback does not). Speeds below 1.0 are never used."""
+
+    def __init__(self, speed: float) -> None:
+        self._speed = max(1.0, speed)
+        self._tsm = None
+        if TTS_STRETCH == "wsola" and _wsola is not None and self._speed > 1.0:
+            self._tsm = _wsola(channels=1, speed=self._speed)
+
+    @property
+    def speed(self) -> float:
+        return self._speed
+
+    def set_speed(self, speed: float) -> None:
+        speed = max(1.0, speed)
+        if abs(speed - self._speed) < 0.005:
+            return
+        self._speed = speed
+        if self._tsm is not None:
+            self._tsm.set_speed(speed)
+
+    def feed(self, pcm: np.ndarray) -> np.ndarray:
+        if self._tsm is None:
+            return _resample_factor(pcm, self._speed)
+        writer = _ArrayWriter(1)
+        self._tsm.run(_ArrayReader(pcm.reshape(1, -1)), writer, flush=False)
+        return writer.data.reshape(-1).astype(np.float32)
+
+    def flush(self) -> np.ndarray:
+        if self._tsm is None:
+            return np.zeros(0, dtype=np.float32)
+        writer = _ArrayWriter(1)
+        self._tsm.run(_ArrayReader(np.zeros((1, 0), dtype=np.float32)), writer, flush=True)
+        return writer.data.reshape(-1).astype(np.float32)
+
+
+class _Pacer:
+    """Playback pacing for one utterance. Holds a pre-roll before the first push, stretches the
+    server's chunks to the configured speed, slows towards 1.0 when the buffered lead runs low
+    (a slower word beats a gap), and keeps the counters behind the utterance log line: the
+    lowest lead seen and how often the playout buffer ran empty (an "audio starve")."""
+
+    def __init__(self, speed: float, push) -> None:
+        self._push = push
+        self._speed = max(1.0, speed)
+        self._stretch = _Stretcher(speed)
+        self._held: list[np.ndarray] = []
+        self._held_n = 0
+        self._released = False
+        self._t_start = 0.0
+        self._pushed = 0          # playback samples handed to the emitter
+        self._starving_since: float | None = None
+        self.samples_in = 0       # server samples received
+        self.min_lead = float("inf")
+        self.starves = 0
+        self.starve_s = 0.0
+
+    def lead(self, now: float) -> float:
+        """Playback seconds pushed but not yet played, by the wall clock since the first push."""
+        return self._pushed / SAMPLE_RATE - (now - self._t_start)
+
+    def feed(self, pcm: np.ndarray) -> None:
+        self.samples_in += len(pcm)
+        now = time.monotonic()
+        if self._released:
+            lead = self.lead(now)
+            self.min_lead = min(self.min_lead, lead)
+            if lead < STARVE_LEAD_S:
+                if self._starving_since is None:
+                    self._starving_since = now
+                    self.starves += 1
+                if lead < 0.0:
+                    # The playout ran dry and restarts with this chunk: re-base the clock.
+                    self._t_start = now - self._pushed / SAMPLE_RATE
+                    lead = 0.0
+            elif self._starving_since is not None:
+                self.starve_s += now - self._starving_since
+                self._starving_since = None
+            self._stretch.set_speed(self._speed_for(lead))
+        self._emit(self._stretch.feed(pcm), now)
+
+    def finish(self) -> None:
+        now = time.monotonic()
+        self._emit(self._stretch.flush(), now)
+        if not self._released:
+            self._release(now)
+        if self._starving_since is not None:
+            self.starve_s += now - self._starving_since
+            self._starving_since = None
+
+    def summary(self) -> str:
+        lead = 0.0 if self.min_lead == float("inf") else self.min_lead
+        return (f"{self._pushed / SAMPLE_RATE:.1f}s played from {self.samples_in / SAMPLE_RATE:.1f}s generated, "
+                f"min lead {lead:.2f}s, audio starves {self.starves} ({int(self.starve_s * 1000)} ms)")
+
+    def _speed_for(self, lead: float) -> float:
+        if self._speed <= 1.0 or TTS_LEAD_LOW_S <= 0.0:
+            return self._speed
+        if lead >= TTS_LEAD_HIGH_S:
+            return self._speed
+        if lead <= TTS_LEAD_LOW_S:
+            return 1.0
+        return 1.0 + (self._speed - 1.0) * (lead - TTS_LEAD_LOW_S) / max(1e-6, TTS_LEAD_HIGH_S - TTS_LEAD_LOW_S)
+
+    def _emit(self, out: np.ndarray, now: float) -> None:
+        if len(out) == 0:
+            return
+        if self._released:
+            self._pushed += len(out)
+            self._push(_to_s16(out))
+            return
+        self._held.append(out)
+        self._held_n += len(out)
+        if self._held_n >= int(TTS_PREROLL_S * SAMPLE_RATE):
+            self._release(now)
+
+    def _release(self, now: float) -> None:
+        self._released = True
+        self._t_start = now
+        for out in self._held:
+            self._pushed += len(out)
+            self._push(_to_s16(out))
+        self._held = []
+        self._held_n = 0
 
 
 # ---------------------------------------------------------------- TTS
@@ -93,6 +238,14 @@ class KyutaiTTS(tts.TTS):
     def label(self) -> str:
         return "kyutai.moshi-server"
 
+    @property
+    def speed(self) -> float:
+        return self._speed
+
+    @speed.setter
+    def speed(self, value: float) -> None:
+        self._speed = max(1.0, min(2.0, float(value)))
+
     def _ws_url(self) -> str:
         return f"{self._url}/api/tts_streaming?voice={quote(self._voice, safe='')}&format=PcmMessagePack"
 
@@ -101,6 +254,16 @@ class KyutaiTTS(tts.TTS):
 
     def stream(self, *, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS) -> tts.SynthesizeStream:
         return KyutaiSynthesizeStream(tts=self, conn_options=conn_options)
+
+    async def render(self, text: str) -> np.ndarray:
+        """Synthesize one line to float32 24 kHz PCM at speed 1.0 (for pre-rendered clips)."""
+        words: asyncio.Queue[str | None] = asyncio.Queue()
+        for w in text.split():
+            words.put_nowait(w)
+        words.put_nowait(None)
+        chunks: list[np.ndarray] = []
+        await self._speak(words, chunks.append)
+        return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
 
     async def _speak(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float = 30.0) -> None:
         """Drive one utterance: words in (None ends it), float32 pcm chunks out via on_pcm."""
@@ -173,35 +336,47 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
         )
         words: asyncio.Queue[str | None] = asyncio.Queue()
         splitter = _WordSplitter()
+        pacer = _Pacer(self._kyutai.speed, output_emitter.push)
         started = False
         t0 = time.monotonic()
         first = [True]
+        last_word_at = 0.0
+        text_gaps = 0
 
         def on_pcm(pcm: np.ndarray) -> None:
             if first[0]:
                 first[0] = False
                 log.info("kyutai tts: first audio %.2fs after first word", time.monotonic() - t0)
-            output_emitter.push(_to_s16(_resample_factor(pcm, self._kyutai._speed)))
+            pacer.feed(pcm)
 
         speak_task: asyncio.Task[None] | None = None
-        async for item in self._input_ch:
-            if isinstance(item, self._FlushSentinel):
-                if started:
-                    for w in splitter.flush():
-                        words.put_nowait(w)
-                    words.put_nowait(None)
-                break
-            if not started:
-                started = True
-                t0 = time.monotonic()
-                output_emitter.start_segment(segment_id=utils.shortuuid())
-                speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm))
-            for w in splitter.feed(item):
-                self._mark_started()
-                words.put_nowait(w)
-        if speak_task is not None:
-            await speak_task
-            output_emitter.end_segment()
+        try:
+            async for item in self._input_ch:
+                if isinstance(item, self._FlushSentinel):
+                    if started:
+                        for w in splitter.flush():
+                            words.put_nowait(w)
+                        words.put_nowait(None)
+                    break
+                if not started:
+                    started = True
+                    t0 = time.monotonic()
+                    output_emitter.start_segment(segment_id=utils.shortuuid())
+                    speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm))
+                for w in splitter.feed(item):
+                    now = time.monotonic()
+                    if last_word_at and now - last_word_at > TEXT_GAP_S:
+                        text_gaps += 1   # the model paused mid-reply; the pre-roll is what covers this
+                    last_word_at = now
+                    self._mark_started()
+                    words.put_nowait(w)
+            if speak_task is not None:
+                await speak_task
+                pacer.finish()
+                output_emitter.end_segment()
+        finally:
+            if started:
+                log.info("kyutai tts: utterance %s, word gaps over %dms %d", pacer.summary(), int(TEXT_GAP_S * 1000), text_gaps)
 
 
 class KyutaiChunkedStream(tts.ChunkedStream):
@@ -220,7 +395,9 @@ class KyutaiChunkedStream(tts.ChunkedStream):
         for w in self._input_text.split():
             words.put_nowait(w)
         words.put_nowait(None)
-        await self._kyutai._speak(words, lambda pcm: output_emitter.push(_to_s16(_resample_factor(pcm, self._kyutai._speed))))
+        pacer = _Pacer(self._kyutai.speed, output_emitter.push)
+        await self._kyutai._speak(words, pacer.feed)
+        pacer.finish()
 
 
 # ---------------------------------------------------------------- STT
@@ -232,7 +409,8 @@ class KyutaiSTT(stt.STT):
     note then arrives out of band, and the streamed words are the transcript)."""
 
     def __init__(self, *, url: str, api_key: str = "public_token", language: str = "en",
-                 tone_url: str | None = None, refine_url: str | None = None, on_tone=None) -> None:
+                 tone_url: str | None = None, refine_url: str | None = None, on_tone=None,
+                 vad: lk_vad.VAD | None = None) -> None:
         super().__init__(capabilities=stt.STTCapabilities(streaming=True, interim_results=True, offline_recognize=False))
         self._url = url.rstrip("/")
         self._api_key = api_key
@@ -240,6 +418,12 @@ class KyutaiSTT(stt.STT):
         self._tone_url = tone_url
         self._refine_url = refine_url
         self._on_tone = on_tone
+        self._vad = vad if GATE_WHILE_SPEAKING else None
+        self.agent_speaking = False
+
+    def set_agent_speaking(self, speaking: bool) -> None:
+        """Told by the agent session; drives the listener gate of every open stream."""
+        self.agent_speaking = speaking
 
     @property
     def label(self) -> str:
@@ -301,6 +485,12 @@ LEAD_IN_SAMPLES = int(float(os.environ.get("KYUTAI_LEAD_IN_S", "1.5")) * SAMPLE_
 # The final transcript waits at most this long for the second pass (it usually finishes
 # inside the pause grace, because it starts when the pause is predicted).
 REFINE_TIMEOUT_S = float(os.environ.get("KYUTAI_REFINE_TIMEOUT_S", "1.5"))
+# Listener gate: while the agent speaks and the caller is silent, room audio is held (the last
+# LEAD_IN seconds) instead of streamed, so the listening model takes no GPU steps during a
+# reply. The local VAD reopens the stream the moment the caller starts, and the held audio is
+# flushed first. GATE_TAIL_S keeps the stream open after the caller stops.
+GATE_WHILE_SPEAKING = os.environ.get("KYUTAI_GATE_WHILE_SPEAKING", "1").strip() not in ("0", "false", "no", "")
+GATE_TAIL_S = float(os.environ.get("KYUTAI_GATE_TAIL_S", "1.0"))
 # Late words arrive in bursts: re-run the pass this long after the last of them.
 REFINE_DEBOUNCE_S = float(os.environ.get("KYUTAI_REFINE_DEBOUNCE_S", "0.25"))
 
@@ -332,6 +522,13 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         self._spec_timer: asyncio.TimerHandle | None = None   # debounce for late-word re-runs
         self._delivery: asyncio.Task[None] | None = None   # finals are delivered in order
         self._input_done = False             # the framework closed the input: no reconnects after this
+        self._gate_vad = stt._vad.stream() if stt._vad is not None else None
+        self._held: list[np.ndarray] = []    # audio held back while gated (the last LEAD_IN seconds)
+        self._held_samples = 0
+        self._user_speaking = False          # the local VAD hears the caller
+        self._open_until = 0.0               # keep streaming this long after the caller stops
+        self._gated = False                  # for the log line on transitions
+        self._held_total = 0                 # frames held this call (log)
 
     def _emit(self, kind: stt.SpeechEventType, text: str = "") -> None:
         ev = stt.SpeechEvent(type=kind, request_id="", alternatives=[stt.SpeechData(language=self._language, text=text)] if text or kind in (stt.SpeechEventType.INTERIM_TRANSCRIPT, stt.SpeechEventType.FINAL_TRANSCRIPT) else [])
@@ -404,10 +601,20 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         self._emit(stt.SpeechEventType.FINAL_TRANSCRIPT, final)
         self._emit(stt.SpeechEventType.END_OF_SPEECH)
 
+    async def _gate_events(self) -> None:
+        assert self._gate_vad is not None
+        async for ev in self._gate_vad:
+            if ev.type == lk_vad.VADEventType.START_OF_SPEECH:
+                self._user_speaking = True
+            elif ev.type == lk_vad.VADEventType.END_OF_SPEECH:
+                self._user_speaking = False
+                self._open_until = time.monotonic() + GATE_TAIL_S
+
     async def _run(self) -> None:
         """One recognition stream for the life of the call: the socket to moshi-server is
         reopened after any drop, so the framework never sees a dead pump."""
         attempt = 0
+        gate_task = asyncio.create_task(self._gate_events()) if self._gate_vad is not None else None
         try:
             while not self._input_done:
                 try:
@@ -426,6 +633,10 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                     log.info("kyutai stt: server closed the stream; reopening")
                     await asyncio.sleep(0.2)
         finally:
+            if gate_task is not None:
+                gate_task.cancel()
+                await asyncio.gather(gate_task, return_exceptions=True)
+                await self._gate_vad.aclose()
             if self._delivery is not None and not self._delivery.done():
                 await asyncio.wait({self._delivery}, timeout=REFINE_TIMEOUT_S + 0.5)
 
@@ -458,7 +669,6 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                     samples = np.frombuffer(frame.data, dtype=np.int16).astype(np.float32) / 32768.0
                     if frame.num_channels > 1:
                         samples = samples.reshape(-1, frame.num_channels).mean(axis=1)
-                    pending = np.concatenate([pending, samples])
                     if self._speech_started:
                         self._audio.append(samples)
                     else:
@@ -466,6 +676,28 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                         self._lead_samples += len(samples)
                         while self._lead and self._lead_samples - len(self._lead[0]) >= LEAD_IN_SAMPLES:
                             self._lead_samples -= len(self._lead.pop(0))
+                    if self._gate_vad is not None:
+                        self._gate_vad.push_frame(frame)
+                        gated = (self._kyutai.agent_speaking and not self._user_speaking
+                                 and time.monotonic() >= self._open_until)
+                        if gated != self._gated:
+                            self._gated = gated
+                            if not gated:
+                                log.info("kyutai stt: listener open (%d frames held)", self._held_total)
+                                self._held_total = 0
+                        if gated:
+                            # Nothing sent: the server steps only on data. Keep the tail for the flush.
+                            self._held.append(samples)
+                            self._held_samples += len(samples)
+                            self._held_total += 1
+                            while self._held and self._held_samples - len(self._held[0]) >= LEAD_IN_SAMPLES:
+                                self._held_samples -= len(self._held.pop(0))
+                            continue
+                        if self._held:
+                            pending = np.concatenate([pending, *self._held])
+                            self._held = []
+                            self._held_samples = 0
+                    pending = np.concatenate([pending, samples])
                     while len(pending) >= STT_CHUNK:
                         chunk, pending = pending[:STT_CHUNK], pending[STT_CHUNK:]
                         await ws.send(msgpack.packb({"type": "Audio", "pcm": chunk.tolist()}, use_single_float=True))

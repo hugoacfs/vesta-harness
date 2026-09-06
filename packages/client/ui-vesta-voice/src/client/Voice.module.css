@@ -160,6 +160,43 @@
   opacity: 0.45;
 }
 
+/* Downlink signal: three bars lit by the connection quality LiveKit reports. */
+.signal {
+  display: inline-flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.signalBar {
+  display: block;
+  width: 3px;
+  border-radius: 1.5px;
+  background: var(--dsw-alias-border-l4);
+}
+
+.signalBar:nth-child(1) { height: 5px; }
+.signalBar:nth-child(2) { height: 8px; }
+.signalBar:nth-child(3) { height: 12px; }
+
+.signal_excellent .signalBar {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.signal_good .signalBar:nth-child(-n + 2) {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.signal_poor .signalBar:nth-child(1) {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.signal_lost .signalBar {
+  background: var(--dsw-alias-state-error-primary);
+  opacity: 0.5;
+}
+
 .actions {
   display: flex;
   flex: none;
