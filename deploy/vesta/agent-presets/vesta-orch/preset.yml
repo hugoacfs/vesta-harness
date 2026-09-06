@@ -1,2 +1,2 @@
 name: Vesta Orchestrator
-description: Standard preset with subagents pinned to the vesta assistant lane (Ornith 9B, 2 slots); orchestrator runs on the default lane (Qwen 27B).
+description: Standard preset; orchestrator and subagents run on the default lane (Qwen 27B). Subagents were pinned to the Ornith 9B assistant lane until it was retired on 2026-09-06.
