@@ -829,10 +829,11 @@ def prewarm(proc: JobProcess) -> None:
         library = FillerLibrary.from_file(FILLERS_FILE, tts_engine.voice_key, stretch)
         missing = library.missing()
         if missing:
-            log.info("rendering %d filler lines for voice %s", len(missing), tts_engine.voice_key)
-            library.render_blocking(tts_engine)
+            # Prewarm has a short timeout: render behind it, one process per voice at a time.
+            log.info("rendering %d filler lines for voice %s in the background", len(missing), tts_engine.voice_key)
+            library.render_in_background(tts_engine)
         loaded = library.load()
-        log.info("filler clips ready: %d (%s)", loaded, ", ".join(f"{c}={len([p for p in ps if p in library._clips])}" for c, ps in library.phrases.items()))
+        log.info("filler clips ready: %d of %d", loaded, sum(len(ps) for ps in library.phrases.values()))
         proc.userdata["fillers"] = library
     except Exception as e:  # noqa: BLE001
         log.warning("fillers unavailable this process: %s", e)

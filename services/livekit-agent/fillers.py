@@ -16,6 +16,7 @@ TTS_SPEED, and never through the GPU.
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import hashlib
 import logging
 import os
@@ -37,7 +38,7 @@ FILLERS = os.environ.get("FILLERS", "1").strip() not in ("0", "false", "no", "")
 FILLERS_FILE = os.environ.get("FILLERS_FILE", "/app/fillers.yaml")
 FILLERS_DIR = os.environ.get("FILLERS_DIR", "/app/fillers")
 # Clips longer than these are never played (a long filler would hold the real answer back).
-FILLER_MAX_S = float(os.environ.get("FILLER_MAX_S", "1.3"))
+FILLER_MAX_S = float(os.environ.get("FILLER_MAX_S", "1.8"))
 FILLER_THINK_MAX_S = float(os.environ.get("FILLER_THINK_MAX_S", "0.9"))
 FRAME_MS = 20
 CATEGORIES = ("thinking", "working", "still_working", "acknowledge")
@@ -54,7 +55,7 @@ def _read_wav(path: str) -> np.ndarray:
 
 
 def _write_wav(path: str, pcm: np.ndarray) -> None:
-    tmp = path + ".part"
+    tmp = f"{path}.part-{os.getpid()}"   # several job processes prewarm at once
     with wave.open(tmp, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
@@ -117,44 +118,49 @@ class FillerLibrary:
         return loaded
 
     async def render(self, tts) -> int:
-        """Render the missing lines through the TTS (one at a time) into the cache dir."""
+        """Render the missing lines through the TTS (one at a time) into the cache dir. One
+        process at a time holds the directory's lock; the others just read what appears."""
         os.makedirs(self._dir, exist_ok=True)
-        rendered = 0
-        for phrase in self.missing():
-            t0 = time.monotonic()
-            pcm = await tts.render(phrase)
-            if len(pcm) < SAMPLE_RATE // 10:
-                log.warning("filler %r rendered empty; skipped", phrase)
-                continue
-            _write_wav(self._path(phrase), pcm)
-            rendered += 1
-            log.info("filler rendered %r: %.1fs of audio in %.1fs", phrase, len(pcm) / SAMPLE_RATE, time.monotonic() - t0)
-        return rendered
+        lock = os.open(os.path.join(self._dir, ".render.lock"), os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return 0   # another job process is rendering this voice
+            rendered = 0
+            for phrase in self.missing():
+                if os.path.exists(self._path(phrase)):
+                    continue
+                t0 = time.monotonic()
+                pcm = await tts.render(phrase)
+                if len(pcm) < SAMPLE_RATE // 10:
+                    log.warning("filler %r rendered empty; skipped", phrase)
+                    continue
+                _write_wav(self._path(phrase), pcm)
+                rendered += 1
+                log.info("filler rendered %r: %.1fs of audio in %.1fs", phrase, len(pcm) / SAMPLE_RATE, time.monotonic() - t0)
+            return rendered
+        finally:
+            os.close(lock)   # releases the flock
 
-    def render_blocking(self, tts, timeout_s: float = 120.0) -> int:
-        """render() from synchronous code (the worker's prewarm hook), on its own event loop."""
-        result: list[int] = []
-        errors: list[BaseException] = []
+    def render_in_background(self, tts) -> None:
+        """render() on its own event loop in a daemon thread, so the worker's prewarm (which
+        has a short timeout) returns at once; clips are picked up by load() as they appear."""
 
         def run() -> None:
             try:
-                result.append(asyncio.run(self.render(tts)))
-            except BaseException as e:  # noqa: BLE001
-                errors.append(e)
+                n = asyncio.run(self.render(tts))
+                if n:
+                    log.info("filler rendering done: %d new clips", n)
+            except Exception as e:  # noqa: BLE001
+                log.warning("filler rendering failed (%s); the rest renders next start", e)
 
-        thread = threading.Thread(target=run, name="filler-render", daemon=True)
-        thread.start()
-        thread.join(timeout_s)
-        if thread.is_alive():
-            log.warning("filler rendering still running after %.0fs; the rest renders next start", timeout_s)
-            return 0
-        if errors:
-            log.warning("filler rendering failed (%s); clips render next start", errors[0])
-            return 0
-        return result[0] if result else 0
+        threading.Thread(target=run, name="filler-render", daemon=True).start()
 
     def pick(self, category: str) -> tuple[str, np.ndarray] | None:
         """A rendered line of the category, not one of the last three used."""
+        if any(p not in self._clips for p in self._phrases.get(category, [])):
+            self.load()   # clips rendered since the last look
         limit = FILLER_THINK_MAX_S if category == "thinking" else FILLER_MAX_S
         ready = [p for p in self._phrases.get(category, []) if p in self._clips and len(self._clips[p]) / SAMPLE_RATE <= limit]
         if not ready:
