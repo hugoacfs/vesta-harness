@@ -1,6 +1,6 @@
 # Vesta Harness on vesta — ops runbook
 
-Everything here runs as `hugo` on vesta from the source checkout `~/code/vesta-harness` (branch `vesta`), with a **fresh Harness home** `~/.vesta-harness`. Since the cutover (2026-09-05) `https://vesta.tail22b555.ts.net:8790` serves this harness; the rc.7 install (`~/code/dsh`, `~/.dsh`, unit `dsh-web`, stopped and disabled) stays installed as the rollback and still owns the pre-cutover sessions.
+Everything here runs as `hugo` on vesta from the source checkout `~/code/vesta-harness` (branch `vesta`), with a **fresh Harness home** `~/.vesta-harness`. Since the cutover (2026-09-05) `https://vesta.tail22b555.ts.net:8790` serves this harness. The old rc.7 install (`~/code/dsh`, `~/.dsh`, unit `dsh-web`) was removed on 2026-09-07 at the user's request — only production (`:8790`) and staging (`:8792`) run now; its code and home are left inert on disk and its sessions are backed up in `~/backups` (see “Cutover … and rc.7 removal” below).
 
 ## Server documentation
 
@@ -13,7 +13,7 @@ This runbook covers the harness only. The server it runs on (stacks, ports, GPUs
 | Source checkout | `~/code/vesta-harness` (origin `hugoacfs/vesta-harness`, upstream `deepseek-ai/deepseek-harness`) |
 | Harness home | `~/.vesta-harness` — `profiles/vesta/`, `settings.yaml`, `.credentials.yaml` (chmod 600), `.agent-presets/{vesta-orch,vesta-voice}/` |
 | Service | systemd `--user` unit `vesta-harness` → `node apps/cli/lib/bin.js --profile vesta --host 127.0.0.1 --port 3081 --trusted-host vesta.tail22b555.ts.net --no-open` |
-| Tailnet URL | `https://vesta.tail22b555.ts.net:8790` (tailscale serve → `127.0.0.1:3081`); nginx `/dsh` redirects there. `:8791` → the rc.7 install (`dsh-web`, `127.0.0.1:3080`, re-enabled for its four unmigrated subagent sessions); `:8792` → the staging instance (`127.0.0.1:3082`, see below) |
+| Tailnet URL | `https://vesta.tail22b555.ts.net:8790` (tailscale serve → `127.0.0.1:3081`); nginx `/dsh` redirects there. `:8792` → the staging instance (`127.0.0.1:3082`, see below). (`:8791`/rc.7 was removed 2026-09-07.) |
 | Templates | this directory: `profiles/vesta/*`, `settings.yaml`, `agent-presets/{vesta-orch,vesta-voice}/*`, `vesta-harness.service`, `vesta-harness-staging.service`, `staging-cordis.patch.yml`, `fillers.yaml`, `livekit-voice.docker-compose.yml`, `moshi-server.docker-compose.yaml`, `bin/*` |
 
 ## Prerequisites (once)
@@ -212,14 +212,18 @@ VESTA_UNIT=vesta-harness-staging VESTA_PORT=8792 vesta-url      # first-visit UR
 
 Update staging: `cd ~/code/vesta-harness-staging && git pull origin staging && pnpm install --frozen-lockfile && pnpm run build && systemctl --user restart vesta-harness-staging`, plus `docker compose --profile staging up -d --build livekit-agent-staging` when `services/livekit-agent` changed. Scripted check against staging: `ROOM_PREFIX=dshs- docker exec livekit-agent-staging python /tmp/call-check.py <session-id> /tmp/p_hello.wav` (the staging harness's session id, created on `127.0.0.1:3082`). Promotion: merge `staging` into `vesta` and run the production update. Rollback: `systemctl --user disable --now vesta-harness-staging`, `tailscale serve --https=8792 off`, `docker compose --profile staging down` — production is never touched.
 
-## Cutover (done 2026-09-05) and rollback
+## Cutover (done 2026-09-05) and rc.7 removal (2026-09-07)
 
-Cutover was three reversible steps: `tailscale serve --bg --https=8790 http://127.0.0.1:3081` (re-points the existing port; nginx's `/dsh` redirect follows), `systemctl --user disable --now dsh-web`, and `tailscale serve --https=8791 off`. The old install keeps `~/.dsh` (its sessions are readable only there; the new home never sees them) and `~/code/dsh`.
+Cutover was three reversible steps: `tailscale serve --bg --https=8790 http://127.0.0.1:3081` (re-points the existing port; nginx's `/dsh` redirect follows), `systemctl --user disable --now dsh-web`, and `tailscale serve --https=8791 off`.
 
-Rollback to rc.7:
+The old install (`~/.dsh`, `~/code/dsh`, unit `dsh-web`) was then kept as the rollback until **2026-09-07, when rc.7 was removed** at the user's request — only production (`:8790`) and staging (`:8792`) run now. Steps taken: `dsh-web` stopped and disabled, the unit file `~/.config/systemd/user/dsh-web.service` deleted, and `tailscale serve --https=8791 off` (Serve now lists only `:8790` and `:8792`). It was backed up first to `~/backups` (`dsh-web.service.bak-before-remove-20260907` and `dsh-home.bak-before-remove-20260907.tar.gz` = the 34M `~/.dsh` home). `~/code/dsh` (315M) and `~/.dsh` (34M) are left inert on disk; neither is shared with the fork (both live units set `DSH_HOME=~/.vesta-harness{,-staging}`; no symlinks point into `~/code/dsh`).
+
+To resurrect rc.7 from the backups if ever needed:
 
 ```bash
-systemctl --user enable --now dsh-web && tailscale serve --bg --https=8790 http://127.0.0.1:3080
+cp ~/backups/dsh-web.service.bak-before-remove-20260907 ~/.config/systemd/user/dsh-web.service
+systemctl --user daemon-reload && systemctl --user enable --now dsh-web
+tailscale serve --bg --https=8791 http://127.0.0.1:3080
 ```
 
-The new harness keeps running on `127.0.0.1:3081` meanwhile; `tailscale serve --bg --https=8791 http://127.0.0.1:3081` exposes it side by side again.
+Production and staging are untouched by any of this.
