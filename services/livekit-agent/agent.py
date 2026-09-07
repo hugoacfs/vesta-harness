@@ -79,9 +79,11 @@ MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "5"))
 DSH_BRIDGE_URL = os.environ.get("DSH_BRIDGE_URL", "").strip()
 # Registered agent name. Empty (the default) = an unnamed worker on automatic dispatch, which is
 # what the vesta SFU (livekit-server 1.13) actually honours: it ignored the token's named
-# dispatch and looked for an unnamed worker. Two Harnesses therefore share automatic dispatch and
-# each worker accepts only the rooms of its own prefix (see accept_room); a rejected job is
-# offered to the other worker.
+# dispatch and looked for an unnamed worker. CAUTION: on 1.13.6 a rejected job is NOT re-offered
+# to another worker, so only ONE unnamed worker may run per SFU — otherwise a room can land on the
+# wrong-prefix worker, get rejected, and end up with no agent (this took prod voice down
+# 2026-09-07). Production is that sole unnamed worker; staging runs NAMED (vesta-staging, out of
+# the auto-dispatch pool) and needs explicit AgentDispatch to serve its rooms. See accept_room.
 AGENT_NAME = os.environ.get("AGENT_NAME", "").strip()
 # The worker's own HTTP server (health endpoint). Loopback only (the container shares the host
 # network), and a different port per worker: the staging worker takes 8082.
