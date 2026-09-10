@@ -302,9 +302,17 @@ class StreamInbox {
 }
 
 function remoteStreamUrl(): string {
+  // Prefer the document base URI: it reflects the served <base href>, so a
+  // reverse-proxy sub-path (e.g. /harness) is carried into the WebSocket URL
+  // exactly as the unary RPC channels do. Workers have no document and fall
+  // back to the origin (root-mounted case); null-origin pages use INTERNAL_BASE.
+  const doc = (globalThis as { document?: { baseURI?: string } }).document
   const location = (globalThis as { location?: { origin?: string } }).location
-  const base = location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE
-  const url = new URL(REMOTE_STREAM_MUX_PATH, base)
+  const origin = location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE
+  const base = typeof doc?.baseURI === 'string' && doc.baseURI !== '' ? doc.baseURI : origin
+  // Base-relative join (leading slash stripped) so the prefix carried by the base
+  // is kept; at the site root (base href "/") this resolves identically to before.
+  const url = new URL(REMOTE_STREAM_MUX_PATH.replace(/^\/+/, ''), base)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.href
 }
