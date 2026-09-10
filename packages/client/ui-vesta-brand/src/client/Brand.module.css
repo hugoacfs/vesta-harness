@@ -12,20 +12,23 @@
   font-family: var(--vesta-font-display, 'Space Grotesk', 'Inter', system-ui, sans-serif);
   font-size: 17px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   line-height: 1;
   white-space: nowrap;
-}
-
-.word {
+  /* One continuous ember gradient across the whole wordmark, matching the
+     landing page's main title (word + suffix share one sweep). */
   background: var(--vesta-ember-gradient, linear-gradient(115deg, #ffffff 20%, #ffc46b 62%, #ff7847 88%));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
+.word {
+  /* inherits the ember gradient from .name */
+}
+
 .suffix {
-  color: var(--dsw-alias-label-secondary);
+  /* colour inherits the .name gradient; keep a slightly lighter weight */
   font-weight: 500;
 }
 
@@ -51,4 +54,23 @@
   .heroOrb {
     animation: none;
   }
+}
+
+
+/* Blinking terminal caret after the wordmark (echoes the landing "vesta_"). */
+.caret {
+  font-family: var(--ds-font-family-code, 'JetBrains Mono', ui-monospace, monospace);
+  font-weight: 400;
+  -webkit-text-fill-color: var(--vesta-ember-1, #ffc46b);
+  color: var(--vesta-ember-1, #ffc46b);
+  margin-left: -2px;
+  animation: vesta-caret-blink 1.15s steps(2) infinite;
+}
+
+@keyframes vesta-caret-blink {
+  50% { opacity: 0.2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret { animation: none; }
 }

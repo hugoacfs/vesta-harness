@@ -1,0 +1,2 @@
+name: Vesta Default
+description: Lean single-agent default (Qwen 27B). No subagents/workflows; web search via the vesta-search MCP, not DeepSeek. Switch to `vesta-orch` for delegation/fan-out.

@@ -25,6 +25,7 @@ export function VestaBrandName({ t }: VestaBrandNameProps) {
     <span className={css.name}>
       <span className={css.word}>{t('brand.name')}</span>
       <span className={css.suffix}>{t('brand.suffix')}</span>
+      <span className={css.caret} aria-hidden="true">_</span>
     </span>
   )
 }
