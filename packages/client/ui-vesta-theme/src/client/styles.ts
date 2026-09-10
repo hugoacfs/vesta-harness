@@ -16,7 +16,9 @@ function anchorFontUrls(sheet: string): string {
   const pathname = new URL(document.baseURI).pathname
   const basePath = pathname.endsWith('/') ? pathname : `${pathname}/`
   if (basePath === '/') return sheet
-  return sheet.replace(/url\('\/vesta\/fonts\//g, `url('${basePath}vesta/fonts/`)
+  // The bundler minifies the inlined sheet and drops the url() quotes, so match
+  // an optional quote and carry it through unchanged.
+  return sheet.replace(/url\((['"]?)\/vesta\/fonts\//g, (_match: string, quote: string) => `url(${quote}${basePath}vesta/fonts/`)
 }
 
 /**
