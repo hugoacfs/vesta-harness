@@ -163,7 +163,9 @@ export function apply(ctx: Context): void {
   }
 
   ctx.effect(() => {
-    const source = new EventSource(EVENTS_ENDPOINT)
+    // Resolve base-relative so a reverse-proxy sub-path (served <base href>) is
+    // kept; the server route stays root-registered and the proxy strips the prefix.
+    const source = new EventSource(new URL(EVENTS_ENDPOINT.replace(/^\/+/, ''), document.baseURI).href)
     source.addEventListener('message', (event: MessageEvent<string>) => {
       let value: unknown
       try {
