@@ -303,12 +303,21 @@ function workerTransport(): FileUploadTransport {
 }
 
 function resolveUrl(path: string): URL {
+  // Prefer the document base URI so a reverse-proxy sub-path (served <base href>)
+  // is honoured; fall back to the page origin (root-mounted / worker contexts).
+  const doc = Reflect.get(globalThis, 'document') as unknown
+  const baseURI = typeof doc === 'object' && doc !== null
+    && 'baseURI' in doc && typeof (doc as { baseURI?: unknown }).baseURI === 'string'
+    && (doc as { baseURI: string }).baseURI !== ''
+    ? (doc as { baseURI: string }).baseURI
+    : undefined
   const pageLocation = Reflect.get(globalThis, 'location') as unknown
   const origin = typeof pageLocation === 'object' && pageLocation !== null
     && 'origin' in pageLocation && typeof pageLocation.origin === 'string'
     ? pageLocation.origin
     : undefined
-  return new URL(path, origin === undefined || origin === 'null' ? 'http://dsh.internal' : origin)
+  const base = baseURI ?? (origin === undefined || origin === 'null' ? 'http://dsh.internal' : origin)
+  return new URL(path.replace(/^\/+/, ''), base)
 }
 
 function isFixturePage(): boolean {

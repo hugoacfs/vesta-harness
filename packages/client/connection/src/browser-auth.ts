@@ -19,6 +19,19 @@ const STORED_SECRET_VERSION = 1
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/
 const PROCESS_LAUNCH_TOKENS = new WeakMap<object, string>()
 
+/**
+ * The path the post-login 303 lands on. The reverse proxy strips the mount
+ * prefix before the request reaches this server, so the redirect target is
+ * taken from `DSH_BASE_PATH` (the same lever as frontend-static's <base href>).
+ * Defaults to `/`, preserving the historical root behaviour.
+ */
+function authMountPath(): string {
+  const raw = (process.env.DSH_BASE_PATH ?? '').trim()
+  if (raw === '' || raw === '/') return '/'
+  const withLead = raw.startsWith('/') ? raw : `/${raw}`
+  return withLead.endsWith('/') ? withLead : `${withLead}/`
+}
+
 interface StoredSecretPayload {
   readonly version: typeof STORED_SECRET_VERSION
   readonly secret: string
@@ -255,7 +268,7 @@ export class BrowserAuth {
         }, this.secret)
         res.writeHead(303, {
           'cache-control': 'no-store',
-          'location': '/',
+          'location': authMountPath(),
           'referrer-policy': 'no-referrer',
           'set-cookie': sessionCookie(
             cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1000),
@@ -267,7 +280,7 @@ export class BrowserAuth {
       if (req.method === 'GET' && url.pathname === '/' && this.isAuthenticated(req)) {
         res.writeHead(303, {
           'cache-control': 'no-store',
-          'location': '/',
+          'location': authMountPath(),
           'referrer-policy': 'no-referrer',
         })
         res.end()

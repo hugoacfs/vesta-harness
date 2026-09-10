@@ -56,6 +56,10 @@ interface LevelWatch {
 
 /** Resolve the browser's Host base with the connection carrier's null-origin fallback. */
 function hostBase(): string {
+  // Prefer the document base URI so a reverse-proxy sub-path (served <base href>)
+  // is carried into voice Host calls; workers/null-origin fall back to the origin.
+  const doc = (globalThis as { document?: { baseURI?: string } }).document
+  if (typeof doc?.baseURI === 'string' && doc.baseURI !== '') return doc.baseURI
   const origin = (globalThis as { location?: { origin?: string } }).location?.origin
   return origin !== undefined && origin !== 'null' ? origin : 'http://dsh.internal'
 }
@@ -193,7 +197,7 @@ export class VoiceCallController {
     // the error the HUD is about to show.
     room.on(RoomEvent.Disconnected, () => { void this.teardown(this.failing) })
     try {
-      const response = await fetch(new URL(`${TOKEN_PATH}?sessionId=${encodeURIComponent(sessionId)}`, hostBase()), {
+      const response = await fetch(new URL(`${TOKEN_PATH.replace(/^\/+/, '')}?sessionId=${encodeURIComponent(sessionId)}`, hostBase()), {
         credentials: 'same-origin',
       })
       if (!response.ok) throw new Error(`token ${String(response.status)}: ${await response.text()}`)
@@ -268,7 +272,7 @@ export class VoiceCallController {
     const actions = this.actions
     if (actions === undefined) return
     try {
-      const response = await fetch(new URL(EMOTION_PATH, hostBase()), {
+      const response = await fetch(new URL(EMOTION_PATH.replace(/^\/+/, ''), hostBase()), {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
@@ -285,7 +289,7 @@ export class VoiceCallController {
     const actions = this.actions
     if (actions === undefined) return
     try {
-      const response = await fetch(new URL(EMOTION_PATH, hostBase()), { credentials: 'same-origin' })
+      const response = await fetch(new URL(EMOTION_PATH.replace(/^\/+/, ''), hostBase()), { credentials: 'same-origin' })
       const body = (await response.json()) as EmotionResponse
       actions.emotion(body.emotion_enabled !== false, body.available === true)
     } catch {

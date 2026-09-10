@@ -250,10 +250,21 @@ function artifactRevision(bundle: Buffer, sourceMap: WebPluginRecord['sourceMap'
   return framedHash('plugin-artifact', sourceMap === undefined ? [bundle] : [bundle, sourceMap.body])
 }
 
+/**
+ * Reverse-proxy mount prefix for client-facing bundle URLs, from `DSH_BASE_PATH`
+ * (e.g. `/harness`). Empty at the site root, so the historical root-absolute
+ * `/plugins/...` URLs are unchanged; the proxy strips this prefix before a
+ * request reaches the root-registered `/plugins` route.
+ */
+const MOUNT_PREFIX: string = (() => {
+  const raw = (process.env.DSH_BASE_PATH ?? '').trim().replace(/\/+$/, '')
+  return raw === '' || raw === '/' ? '' : raw.startsWith('/') ? raw : `/${raw}`
+})()
+
 /** Address one ordered plugin-file list through the shared combo route. */
 function comboUrl(ids: readonly string[], rev: string, sourceMap = false): string {
   const resources = ids.map(id => `${id}/client.js${sourceMap ? '.map' : ''}`).join(',')
-  return `/plugins/??${resources}&rev=${rev}`
+  return `${MOUNT_PREFIX}/plugins/??${resources}&rev=${rev}`
 }
 
 /** Measure the longer map-form URL used to partition a startup resource list. */
@@ -305,7 +316,7 @@ function comboSource(record: WebPluginRecord): ComboSource {
   source = source.replace(SOURCE_URL_TRAILER, '').replace(SOURCE_MAP_TRAILER, '')
   if (!source.endsWith('\n')) source += '\n'
   const fallbackSource = sourceUrl === undefined
-    ? `/plugins/${record.entry.id}/client.js`
+    ? `${MOUNT_PREFIX}/plugins/${record.entry.id}/client.js`
     : /^(?:[A-Za-z][A-Za-z\d+.-]*:|\/)/.test(sourceUrl) ? sourceUrl : `/${sourceUrl}`
   return { source, fallbackSource }
 }
@@ -1008,7 +1019,15 @@ export class ClientModuleRegistry extends Service {
     /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server requests. */
     const requestUrl = new URL(req.url ?? '/', 'http://x')
     const resourceUrl = `${requestUrl.pathname}${requestUrl.search}`
-    const response = this.responses.get(resourceUrl) ?? this.previousBatchResponses.get(resourceUrl)
+    // Bundle URLs carry the MOUNT_PREFIX (client-facing), but a reverse proxy
+    // strips that prefix before the request reaches this root-registered route.
+    // Match either the raw request (direct/root access) or the prefixed key
+    // (proxy-stripped access), so one response map serves both. MOUNT_PREFIX is
+    // empty at the site root, where both lookups collapse to the historical one.
+    const response = this.responses.get(resourceUrl)
+      ?? this.responses.get(`${MOUNT_PREFIX}${resourceUrl}`)
+      ?? this.previousBatchResponses.get(resourceUrl)
+      ?? this.previousBatchResponses.get(`${MOUNT_PREFIX}${resourceUrl}`)
     if (response !== undefined) {
       res.writeHead(200, {
         'content-type': response.contentType,

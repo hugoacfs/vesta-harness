@@ -106,6 +106,20 @@ export async function serveStatic(
 }
 
 /**
+ * The `<base href>` value the served index carries. Defaults to the site root
+ * (`/`); setting `DSH_BASE_PATH` (e.g. `/harness`) mounts the app under a
+ * reverse-proxy sub-path. The dist is built with a relative base, so this
+ * anchor — together with the client's baseURI-relative Host calls — is all a
+ * sub-path needs. An empty/`"/"` value keeps the historical root behaviour.
+ */
+function baseHref(): string {
+  const raw = (process.env.DSH_BASE_PATH ?? '').trim()
+  if (raw === '' || raw === '/') return '/'
+  const withLead = raw.startsWith('/') ? raw : `/${raw}`
+  return withLead.endsWith('/') ? withLead : `${withLead}/`
+}
+
+/**
  * Claim the webserver fallback seat and serve the dist.
  * @param ctx - plugin context carrying the webServer service.
  * @param config - validated {@link Config}.
@@ -113,13 +127,15 @@ export async function serveStatic(
 export function apply(ctx: Context, config: Config): void {
   const distIndex = config.distIndex
   const distRoot = dirname(distIndex)
+  const base = baseHref()
   // The dist is built with a relative base so the same files mount under any
   // static directory; served pages also answer deep SPA-fallback paths, where
   // relative asset URLs would resolve under the request directory, so the
-  // served form anchors them at the site root ahead of every URL-bearing tag.
+  // served form anchors them at the configured base (site root by default)
+  // ahead of every URL-bearing tag.
   const renderIndex = async (): Promise<string> => {
     const body = ctx.webServer.renderIndex(await readFile(distIndex, 'utf8'))
-    return body.replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="/">`)
+    return body.replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="${base}">`)
   }
   ctx.effect(() => ctx.webServer.registerFallback(async (req, res) => {
     // Non-GET/HEAD without a matching named route is 405 (fallback-only

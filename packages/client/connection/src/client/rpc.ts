@@ -41,7 +41,10 @@ export function createWebConnectionRpc(doFetch?: RpcFetch, openStream?: RpcStrea
         payload,
       }
       const response = await send(
-        new URL(`${channel}/${endpoint}`, resolveBase()),
+        // Base-relative join (channel's leading slash stripped) so a reverse-proxy
+        // sub-path carried in the page's <base href> is preserved. At the site
+        // root (base href "/") this resolves identically to the old absolute join.
+        new URL(`${channel.replace(/^\/+/, '')}/${endpoint}`, resolveBase()),
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -106,6 +109,11 @@ function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
 }
 
 function resolveBase(): string {
+  // Prefer the document base URI: it reflects the served <base href>, so a
+  // reverse-proxy sub-path (e.g. /harness) is carried into every Host call.
+  // Workers have no document and fall back to the origin (root-mounted case).
+  const doc = (globalThis as { document?: { baseURI?: string } }).document
+  if (typeof doc?.baseURI === 'string' && doc.baseURI !== '') return doc.baseURI
   const location = (globalThis as { location?: { origin?: string } }).location
   return location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE
 }
