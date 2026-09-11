@@ -119,6 +119,45 @@
       config:
         linkBase: https://vesta.tail22b555.ts.net/harness/
 
+    # ── roadmap T7 (2026-09-12): persistent terminals ───────────────────────
+    # The PTY seam and its bash backend (upstream mounts them only in the
+    # minimal SDK bundle); the six `terminal_*` tools are rows in the vesta-ops
+    # and vesta-build presets.
+    - id: pty
+      name: '@deepseek-ai/dsh-terminal'
+
+    - id: terminal-bash
+      name: '@deepseek-ai/dsh-terminal-bash'
+      config:
+        timeoutMs: 300000
+
+    # ── roadmap T8 (2026-09-12): code intelligence for the Build mode ────────
+    # The LSP seam and its stdio provider; the model-facing `lsp` tool is a row
+    # in the vesta-build preset. Servers are absolute paths (the unit's PATH
+    # has no ~/.local/bin): typescript-language-server (npm -g) and
+    # basedpyright (uv tool). A missing executable fails the provider at load.
+    - id: lsp
+      name: '@deepseek-ai/dsh-lsp'
+
+    - id: lsp-stdio
+      name: '@deepseek-ai/dsh-lsp-stdio'
+      config:
+        servers:
+          typescript:
+            command: /home/hugo/.local/bin/typescript-language-server
+            args: ['--stdio']
+            extensionToLanguage:
+              '.ts': typescript
+              '.tsx': typescriptreact
+              '.js': javascript
+              '.jsx': javascriptreact
+              '.mjs': javascript
+          python:
+            command: /home/hugo/.local/bin/basedpyright-langserver
+            args: ['--stdio']
+            extensionToLanguage:
+              '.py': python
+
     # ── host: vesta MCP servers ─────────────────────────────────────────────
     - id: mcp-vesta-memory
       name: '@deepseek-ai/dsh-mcp-client'

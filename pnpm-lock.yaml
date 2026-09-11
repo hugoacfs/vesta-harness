@@ -1778,6 +1778,12 @@ importers:
       '@deepseek-ai/dsh-hooks-claude-code':
         specifier: workspace:^
         version: link:../../hooks/hooks-claude-code
+      '@deepseek-ai/dsh-lsp':
+        specifier: workspace:^
+        version: link:../../lsp/lsp
+      '@deepseek-ai/dsh-lsp-stdio':
+        specifier: workspace:^
+        version: link:../../lsp/lsp-stdio
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:^
         version: link:../../mcp/mcp-client
@@ -1787,12 +1793,24 @@ importers:
       '@deepseek-ai/dsh-session-title-all-prompts-llm':
         specifier: workspace:^
         version: link:../../session/session-title-all-prompts-llm
+      '@deepseek-ai/dsh-terminal':
+        specifier: workspace:^
+        version: link:../../terminal/terminal
+      '@deepseek-ai/dsh-terminal-bash':
+        specifier: workspace:^
+        version: link:../../terminal/terminal-bash
       '@deepseek-ai/dsh-time-context':
         specifier: workspace:^
         version: link:../../context/time-context
+      '@deepseek-ai/dsh-tool-lsp':
+        specifier: workspace:^
+        version: link:../../lsp/tool-lsp
       '@deepseek-ai/dsh-tool-session-query':
         specifier: workspace:^
         version: link:../../session-query/tool-session-query
+      '@deepseek-ai/dsh-tool-terminal':
+        specifier: workspace:^
+        version: link:../../terminal/tool-terminal
       '@deepseek-ai/dsh-vesta-incognito':
         specifier: workspace:^
         version: link:../../vesta/vesta-incognito

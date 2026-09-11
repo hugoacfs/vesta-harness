@@ -69,6 +69,12 @@
 - id: tool-session-query
   name: '@deepseek-ai/dsh-tool-session-query'
 
+# Persistent terminals (roadmap T7, 2026-09-12): six PTY tools (open, send, read,
+# signal, close, list) over the host's terminal seam and bash backend; for
+# interactive processes and long sessions instead of polling background jobs.
+- id: tool-terminal
+  name: '@deepseek-ai/dsh-tool-terminal'
+
 # `present` (upstream 0.1.5): the model hands finished files to the user as download
 # cards ("immutable file deliveries"). Bare tool row, no realm. Added 2026-09-11 with the
 # upstream sync; upstream's `standard` preset carries the same row after `tool-web`.
