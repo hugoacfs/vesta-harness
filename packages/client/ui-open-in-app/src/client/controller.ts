@@ -10,6 +10,11 @@ type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 
 /** Resolve the browser's Host base with the connection carrier's null-origin fallback. */
 function hostBase(): string {
+  // Prefer the document base URI so a reverse-proxy sub-path (the served <base href>,
+  // DSH_BASE_PATH) is carried into the probe and launch calls; workers and null-origin
+  // pages fall back to the origin. At the site root this resolves identically.
+  const doc = (globalThis as { document?: { baseURI?: string } }).document
+  if (typeof doc?.baseURI === 'string' && doc.baseURI !== '') return doc.baseURI
   const origin = (globalThis as { location?: { origin?: string } }).location?.origin
   return origin !== undefined && origin !== 'null' ? origin : 'http://dsh.internal'
 }
@@ -60,7 +65,7 @@ export class OpenInAppController {
    */
   async launch(appId: string, path: string): Promise<void> {
     const body: OpenInAppOpenPayload = { app: appId, path }
-    const response = await this.fetcher(new URL(OPEN_IN_APP_OPEN_ROUTE, hostBase()), {
+    const response = await this.fetcher(new URL(OPEN_IN_APP_OPEN_ROUTE.replace(/^\/+/, ''), hostBase()), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -71,7 +76,7 @@ export class OpenInAppController {
   private async run(): Promise<void> {
     let apps: readonly string[] = []
     try {
-      const response = await this.fetcher(new URL(OPEN_IN_APP_APPS_ROUTE, hostBase()), {
+      const response = await this.fetcher(new URL(OPEN_IN_APP_APPS_ROUTE.replace(/^\/+/, ''), hostBase()), {
         headers: { accept: 'application/json' },
       })
       if (response.ok) {

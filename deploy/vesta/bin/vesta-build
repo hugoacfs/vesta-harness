@@ -1,0 +1,16 @@
+#!/bin/sh
+# vesta-build — build the Vesta Harness checkout with the Vesta build-time settings.
+#
+# Since the 2026-09-11 upstream sync (dsh 0.1.5-rc.2) the tab title is set at runtime by
+# upstream's ui-layout plugin from the BUILD-TIME env DSH_CLIENT_TITLE (else "DSH Local Build");
+# the <title> in apps/web/index.html no longer sticks. Use this wrapper instead of a bare
+# `pnpm run build` in every update procedure.
+#
+#   vesta-build            # pnpm install --frozen-lockfile && pnpm run build, titled "vesta harness"
+#   vesta-build --no-install
+set -eu
+export DSH_CLIENT_TITLE="${DSH_CLIENT_TITLE:-vesta harness}"
+export PATH="$HOME/.local/bin:$HOME/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin:$PATH"
+[ "${1:-}" = "--no-install" ] || pnpm install --frozen-lockfile
+pnpm run build
+echo "vesta-build: built $(git rev-parse --short HEAD 2>/dev/null || echo '?') with DSH_CLIENT_TITLE=\"$DSH_CLIENT_TITLE\""
