@@ -8,3 +8,14 @@
     livekitUrl: wss://vesta.tail22b555.ts.net:8481
     mediaUrl: http://127.0.0.1:8011
     roomPrefix: dshs-
+
+# Staging-only (2026-09-11, feature plan P2): short notifier thresholds so the Telegram
+# pings can be exercised in minutes. A patch replaces the whole config, so linkBase is
+# restated. Production keeps the plugin defaults (120 s / 60 s / 90 s).
+- id: vesta-notify
+  config:
+    linkBase: https://vesta.tail22b555.ts.net/harness-staging/
+    minTurnSeconds: 20
+    approvalWaitSeconds: 10
+    awayAfterSeconds: 30
+    cooldownSeconds: 30

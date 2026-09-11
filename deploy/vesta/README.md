@@ -169,6 +169,28 @@ docker cp ~/code/vesta-harness/deploy/vesta/bin/vesta-call-check livekit-agent:/
 
 Make the WAVs with the streaming voice server: `docker exec livekit-agent python /tmp/say.py "Yes, go ahead." /tmp/yes.wav` (`say.py` is kept in `/srv/ai/compose/livekit-voice/probes/`, next to the probe WAVs; `docker cp` both into the container after a rebuild). The old sidecar route (`127.0.0.1:8010/v1/audio/speech`) only works with the parked `kyutai-tts` project started. Plugin logger lines do not reach the journal (only the startup URL does); use the agent container's log and the session log for evidence.
 
+## Notifications (Telegram) and presence
+
+Since 2026-09-11 (feature plan P2) the harness pings you on Telegram when nobody is looking. Host plugin `vesta-notify` (`packages/vesta/vesta-notify`, mounted by the `vesta-app` bundle) watches every Session's durable log and the approval / question waterfalls; the browser half `ui-vesta-presence` posts a heartbeat to `POST /api/vesta/notify/presence` every 30 s while a tab is visible. Delivery is a stateless streamable-HTTP `tools/call` to the send-only Telegram MCP (`ai-telegram-mcp`, loopback `127.0.0.1:7335`, tool `notify`); the bot token stays inside that container.
+
+| Trigger | Default | Message |
+|---|---|---|
+| a turn ran at least `minTurnSeconds` and finished | 120 s | “Turn finished after N s.” + the first line of the reply |
+| an approval or ask-user question waited `approvalWaitSeconds` | 60 s | “Approval waiting for <tool>.” / “Question waiting for you.” |
+
+Guards: `onlyWhenAway` (default true: no visible-tab heartbeat for `awayAfterSeconds` = 90 s), `cooldownSeconds` (300 per Session and trigger), `quietHours` (`HH:MM-HH:MM`, local time, may wrap midnight), `silent`; `linkBase` (`https://vesta.tail22b555.ts.net/harness/` in the bundle) is appended to every message. Staging runs short thresholds through its home patch (`staging-cordis.patch.yml`: 20 s / 10 s / 30 s) so the path can be exercised in minutes.
+
+```bash
+curl -s -b <jar> -H 'content-type: application/json' -X POST https://vesta.tail22b555.ts.net/harness/api/vesta/notify/presence -d '{"visible":false}'   # {"ok":true,"away":…}
+docker logs --since 10m ai-telegram-mcp | grep -c CallToolRequest      # one line per delivery
+```
+
+End to end: with every harness tab closed for 90 s, prompt a session over RPC to run `sleep 130` through the shell tool; one message arrives when the turn ends (2026-09-11: 138 s after the prompt on production, 34 s on staging with the short thresholds). Plugin log lines never reach the journal; the MCP container's log is the evidence. A visible tab keeps the notifier quiet by design.
+
+## Settings from a tailnet browser, and the welcome notice
+
+Upstream keeps every settings scope process-local for a browser whose hostname is not loopback, so from the tailnet the Settings page never persisted and the “Internal Testing Notice” reappeared on every load. The fork's `ui-settings` honours `DSH_CLIENT_SETTINGS_PERSISTENCE=host` at build time (`vesta-build` sets it; `VESTA.md` fork-patch table): settings written from the tailnet land in `$DSH_HOME/settings.yaml`, and the acknowledgement already stored there (`ui-onboarding.welcomeNoticeVersion`) keeps the notice away. Verify: a fresh browser profile opens the `vesta-url` link and lands on the app with no dialog. If upstream bumps the notice version, acknowledge it once from any browser; it persists.
+
 ## CLI smoke check (no browser)
 
 `profiles/vesta-headless` stacks the same layers without the web server, so a one-shot run proves the model route, credentials, preset, and MCP tools from a shell:
