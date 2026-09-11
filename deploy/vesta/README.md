@@ -203,7 +203,7 @@ Upstream archives a session from its row menu (a registry-global hidden set) and
 |---|---|
 | Restore | `POST /api/vesta/sessions/unarchive {sessionId}` → the fork's `WorkspaceRegistry.unarchiveSession`; the session returns to its old place in the sidebar at once (the workspace feed publishes the change to every tab) |
 | Download log | upstream's `GET /api/session.export?sessionId=…` (a ZIP of the log); nothing changes on the server |
-| Delete for good… | an inline confirm, then `POST /api/vesta/sessions/delete {sessionId}`: refused with 409 while the session is open anywhere (close its tab; a session only goes cold when nothing has it attached — after a restart at the latest), otherwise the session directory is tarred to `exportDir` as `<sessionId>-<timestamp>.tar.gz`, removed, forgotten in the registry (archive set, workspace accounting, header index) and every browser drops the row (`api-session/removed`) |
+| Delete for good… | an inline confirm, then `POST /api/vesta/sessions/delete {sessionId}`: an open session is closed first (the fork's `sessionController.close`, 2026-09-11; only a session the controller cannot close, such as a subagent, answers 409), then the session directory is tarred to `exportDir` as `<sessionId>-<timestamp>.tar.gz`, removed, forgotten in the registry (archive set, workspace accounting, header index) and every browser drops the row (`api-session/removed`) |
 
 `exportDir` defaults to `~/backups/sessions-deleted` (bundle row); staging writes to `~/backups/sessions-deleted-staging` (`staging-cordis.patch.yml`). The tarball is the raw directory (`session.v3.jsonl.zstd`, `session.lock`, attachments when present). To bring a deleted session back, unpack it into the workspace directory it came from — the sanitised cwd, e.g. `--home-hugo-workspace-dsh-chat--`:
 
@@ -217,6 +217,12 @@ The listing reads the directories on every request, so the session is back in `s
 curl -s -b <jar> https://vesta.tail22b555.ts.net/harness/api/vesta/sessions/archived | head -c 300      # {"items":[{"sessionId":…,"title":…,"updatedAt":…,"cwd":…}]}
 curl -s -o /dev/null -w '%{http_code}\n' -b <jar> -H 'content-type: application/json' -X POST https://vesta.tail22b555.ts.net/harness/api/vesta/sessions/delete -d '{"sessionId":"session-00000000-0000-0000-0000-000000000000"}'   # 404
 ```
+
+## Incognito (roadmap M4, 2026-09-11)
+
+The `vesta-incognito` preset (the Companion composition with an incognito persona) plus the host plugin `vesta-incognito` (`packages/vesta/vesta-incognito`, mounted by the bundle patch): the memory MCP's `memory_write`/`memory_edit`/`memory_delete` are refused on the `tools/pre-execute` waterfall with a reason the model sees; the title is pinned to "Incognito" at creation (a user rename, so no title request runs); `vesta-notify` skips the preset (`excludePresets`); and the session is wiped — directory removed, registry traces forgotten, every browser told — when it is closed, when it is archived (the one-click way out: the row menu's Archive), when the process disposes it, and at the next boot for anything an earlier run left behind. Reasoning is off (`vesta-modes`). Boundaries: the log exists on disk while the session runs (there is no in-memory backend) and the model gateway sees the prompts as for any session.
+
+Verify without a browser: create a session with `agentPreset: vesta-incognito`, ask it to save something with the memory write tool — the tool result is a refusal and the reply says so; the log has one `session/title` event (`Incognito`, source `user`) and no `session/title-llm-request`; archive it with `workspace/archiveSession` and within a few seconds the session directory is gone and `session/list` no longer names it. Restart with an incognito session still open: it is gone after the boot sweep (about five seconds after start).
 
 ## Modes (roadmap M1–M2, 2026-09-11)
 

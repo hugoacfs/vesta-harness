@@ -220,6 +220,16 @@ export class SessionController extends TypertRemoteService {
    * @param signal - cancellation for persistence reads.
    * @returns visible Session summaries ordered by activity.
    */
+  /**
+   * Vesta fork: close a live Session created through this controller so it goes
+   * cold without a restart (host-internal; see ApiSessionAgentController.close).
+   * @param sessionId - the Session to close.
+   * @returns true when a held handle was disposed.
+   */
+  close(sessionId: SessionId): Promise<boolean> {
+    return this.agents.close(sessionId)
+  }
+
   @Remote('list')
   async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
     return { items: await this.listState.list(signal) }

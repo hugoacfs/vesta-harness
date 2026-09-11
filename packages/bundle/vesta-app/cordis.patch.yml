@@ -97,6 +97,13 @@
           vesta-build: { permission: danger-full-access, reasoning: xhigh }
           vesta-research: { permission: danger-full-access, reasoning: xhigh }
           vesta-companion: { permission: danger-full-access, reasoning: 'off' }
+          vesta-incognito: { permission: danger-full-access, reasoning: 'off' }
+
+    # ── incognito (roadmap M4, 2026-09-11) ─────────────────────────────────
+    # Sessions on the vesta-incognito preset: memory writes refused, title pinned,
+    # notifier quiet (vesta-notify excludePresets), wiped on close/archive/boot.
+    - id: vesta-incognito
+      name: '@deepseek-ai/dsh-vesta-incognito'
 
     # ── host: vesta MCP servers ─────────────────────────────────────────────
     - id: mcp-vesta-memory

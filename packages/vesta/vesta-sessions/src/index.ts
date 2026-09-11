@@ -140,7 +140,11 @@ export function apply(ctx: Context, config: Config): void {
     const parsed = await readBody(request)
     if (parsed instanceof Response) return parsed
     if (ctx.get('sessions')?.get(parsed) !== undefined) {
-      return new Response('that session is open; close it first', { status: 409 })
+      // A live session is closed first (the fork's controller.close); only a
+      // session this controller does not hold (a subagent, a config-created
+      // agent) is refused.
+      const closed = await controller.close(parsed)
+      if (!closed) return new Response('that session is open and cannot be closed from here', { status: 409 })
     }
     const directory = await sessionDirectory(parsed)
     if (directory === undefined) return new Response('no stored session with that id', { status: 404 })

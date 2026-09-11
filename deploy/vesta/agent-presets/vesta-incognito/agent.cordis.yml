@@ -1,0 +1,69 @@
+# User preset `vesta-incognito` — the Incognito mode (roadmap M4, 2026-09-11): the
+# Companion composition, but nothing is kept. The `vesta-incognito` host plugin refuses
+# the memory MCP's writing tools, pins the title, keeps the notifier quiet, and wipes the
+# session when it is closed, archived or found at the next boot. Reasoning off
+# (`vesta-modes`).
+#
+# AGENT-PLANE composition: a service row MUST sit inside a group with an `isolate`
+# realm; bare tool rows need none.
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    # `prefix` (was `text` before the 0.1.5 sync): dsh-persona renders it as the
+    # deployment:persona-prefix section; the omitted `suffix` shadows the global one.
+    prefix: >-
+      You are Vesta, powered by the {{model}} model, on the user's own server. Your working directory is {{cwd}}.
+
+      Incognito mode: this conversation is private and nothing from it is kept. Do not save anything to
+      memory — the memory writing tools are switched off and will refuse; do not try to work around that
+      by writing files. You may still read what you already know (mcp__memory__memory_search) when the user
+      asks. The session has no title and is removed when the user archives it or when the harness restarts.
+
+      Otherwise be the companion: warm, direct and brief — two or three sentences unless asked for more.
+      The runtime context tells you the current date and time. You can look things up (mcp__search__*) or run
+      a quick command when it helps; say what you did in one short sentence.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 32768
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+      config:
+        thresholdRatio: 0.5
+        maxTokens: 16384
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024

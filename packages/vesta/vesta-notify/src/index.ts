@@ -9,7 +9,6 @@
  * server pins the recipient and only takes text.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-user-approval'
@@ -39,6 +38,8 @@ export interface Config {
   awayAfterSeconds: number
   /** Report only while away; false reports regardless of presence. @default true */
   onlyWhenAway: boolean
+  /** Sessions started with these presets are never reported (incognito). @default ['vesta-incognito'] */
+  excludePresets: string[]
   /** Local-time window with no messages, `HH:MM-HH:MM` (may wrap midnight); empty disables. @default '' */
   quietHours: string
   /** Deliver without sound. @default false */
@@ -56,6 +57,7 @@ export const Config: z<Config> = z.object({
   cooldownSeconds: z.number().default(300),
   awayAfterSeconds: z.number().default(90),
   onlyWhenAway: z.boolean().default(true),
+  excludePresets: z.array(z.string()).default(['vesta-incognito']),
   quietHours: z.string().default(''),
   silent: z.boolean().default(false),
   linkBase: z.string().default(''),
@@ -76,6 +78,7 @@ interface NotifyConnection {
 
 /** Session face the durable-event listener receives; only the id and the history read are used. */
 interface SessionLike {
+  readonly header?: { readonly agentPreset?: string }
   readonly id: unknown
   snapshotEvents(): Iterable<{ readonly type: string; readonly data?: unknown }>
 }
@@ -117,7 +120,6 @@ export function inQuietHours(spec: string, at: Date): boolean {
  */
 function titleOf(session: SessionLike): string | undefined {
   let title: string | undefined
-  // oxlint-disable-next-line typescript/no-deprecated -- existing history read; the projection needs a scope
   for (const event of session.snapshotEvents()) {
     if (event.type !== 'session/title') continue
     const data = event.data as { readonly title?: unknown } | undefined
@@ -175,6 +177,8 @@ export function apply(ctx: Context, config: Config): void {
   const away = (): boolean => Date.now() - lastVisibleAt > config.awayAfterSeconds * 1000
 
   const notify = (sessionId: string, session: SessionLike | undefined, trigger: Trigger, body: string): void => {
+    const preset = session?.header?.agentPreset
+    if (preset !== undefined && config.excludePresets.includes(preset)) return
     if (config.onlyWhenAway && !away()) return
     if (inQuietHours(config.quietHours, new Date())) return
     const key = `${sessionId}:${trigger}`
@@ -223,12 +227,12 @@ export function apply(ctx: Context, config: Config): void {
     if (started === undefined) return
     const seconds = Math.round((Date.now() - started) / 1000)
     if (seconds < config.minTurnSeconds) return
-    notify(id, session as unknown as SessionLike, 'turn', `Turn finished after ${String(seconds)} s.\n${excerpt(turnText.get(id))}`)
+    notify(id, session, 'turn', `Turn finished after ${String(seconds)} s.\n${excerpt(turnText.get(id))}`)
   }), 'vesta-notify: turn observer')
 
   ctx.effect(() => ctx.on('agent/assistant-stream', ({ agent, frame }) => {
     if (frame.type !== 'chunk' || frame.chunk.type !== 'text-delta') return
-    const id = String((agent as Agent).session.id)
+    const id = String(agent.session.id)
     turnText.set(id, (turnText.get(id) ?? '') + frame.chunk.text)
   }), 'vesta-notify: assistant text')
 
@@ -240,7 +244,7 @@ export function apply(ctx: Context, config: Config): void {
     const id = String(agent.session.id)
     const reason = request.reason === undefined || request.reason === '' ? '' : `\n${request.reason}`
     const timer = setTimeout(() => {
-      notify(id, agent.session as unknown as SessionLike, 'approval', `Approval waiting for ${request.toolName}.${reason}`)
+      notify(id, agent.session, 'approval', `Approval waiting for ${request.toolName}.${reason}`)
     }, config.approvalWaitSeconds * 1000)
     try {
       return await next()
@@ -255,7 +259,7 @@ export function apply(ctx: Context, config: Config): void {
     const id = String(agent.session.id)
     const first = request.questions[0]?.question
     const timer = setTimeout(() => {
-      notify(id, agent.session as unknown as SessionLike, 'question', `Question waiting for you.${typeof first === 'string' ? `\n${first}` : ''}`)
+      notify(id, agent.session, 'question', `Question waiting for you.${typeof first === 'string' ? `\n${first}` : ''}`)
     }, config.approvalWaitSeconds * 1000)
     try {
       return await next()

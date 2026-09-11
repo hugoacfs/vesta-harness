@@ -42,6 +42,7 @@ const RETRY_DELAY_MS = 400
 const RETRIES = 4
 
 function hasTurn(session: Session): boolean {
+  // oxlint-disable-next-line typescript/no-deprecated -- freshness check at creation; a projection later
   return session.snapshotEvents().some(event => event.type === 'turn/start')
 }
 
