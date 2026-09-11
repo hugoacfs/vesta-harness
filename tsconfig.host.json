@@ -301,6 +301,7 @@
     { "path": "./packages/bundle/vesta-app" },
     { "path": "./packages/vesta/vesta-voice" },
     { "path": "./packages/vesta/vesta-notify" },
+    { "path": "./packages/vesta/vesta-sessions" },
     { "path": "./packages/boot/app-boot" },
     { "path": "./packages/boot/cmdline" },
     { "path": "./packages/sdk/server" },

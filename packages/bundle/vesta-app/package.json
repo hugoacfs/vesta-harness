@@ -29,10 +29,12 @@
   "dependencies": {
     "@deepseek-ai/dsh-client-ui-vesta-brand": "workspace:^",
     "@deepseek-ai/dsh-client-ui-vesta-presence": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-vesta-sessions": "workspace:^",
     "@deepseek-ai/dsh-client-ui-vesta-theme": "workspace:^",
     "@deepseek-ai/dsh-client-ui-vesta-voice": "workspace:^",
     "@deepseek-ai/dsh-mcp-client": "workspace:^",
     "@deepseek-ai/dsh-vesta-notify": "workspace:^",
+    "@deepseek-ai/dsh-vesta-sessions": "workspace:^",
     "@deepseek-ai/dsh-vesta-voice": "workspace:^"
   },
   "peerDependencies": {

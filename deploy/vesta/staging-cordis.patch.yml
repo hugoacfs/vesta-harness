@@ -23,3 +23,8 @@
     approvalWaitSeconds: 10
     awayAfterSeconds: 30
     cooldownSeconds: 30
+
+# Phase 4: deleted sessions from staging are exported apart from production ones.
+- id: vesta-sessions
+  config:
+    exportDir: ~/backups/sessions-deleted-staging

@@ -38,6 +38,10 @@
     - id: ui-vesta-presence
       name: '@deepseek-ai/dsh-client-ui-vesta-presence'
 
+    # ── sessions: the Archived panel (restore, download the log, delete) ───
+    - id: ui-vesta-sessions
+      name: '@deepseek-ai/dsh-client-ui-vesta-sessions'
+
     # Host half: room tokens, the agent bridge upgrade route, the spoken-mode
     # prompt section, and the perception-toggle proxy. LiveKit credentials are
     # credential references (LIVEKIT_API_KEY / LIVEKIT_API_SECRET in
@@ -59,6 +63,14 @@
       name: '@deepseek-ai/dsh-vesta-notify'
       config:
         linkBase: https://vesta.tail22b555.ts.net/harness/
+
+    # ── sessions: archived list, restore, delete-for-good (exported first) ─
+    # Host half of the Archived panel. A deleted session is tarred into
+    # exportDir before its directory goes; open sessions are refused.
+    - id: vesta-sessions
+      name: '@deepseek-ai/dsh-vesta-sessions'
+      config:
+        exportDir: ~/backups/sessions-deleted
 
     # ── host: vesta MCP servers ─────────────────────────────────────────────
     - id: mcp-vesta-memory

@@ -254,6 +254,53 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Vesta fork: take one session out of the archive set durably. Its workspace
+   * accounting was never touched by archiving, so it returns to its previous
+   * place in the sidebar. An id that is not archived resolves without writing.
+   * @param sessionId - The session to restore.
+   * @returns resolution after durability.
+   */
+  unarchiveSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.archivedSessionIds.includes(sessionId)) return
+      await this.setState({ ...state, archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId) })
+    })
+  }
+
+  /**
+   * Vesta fork: drop every registry trace of a session whose stored log has
+   * been removed: its archive-set membership, its workspace accounting, and
+   * its header-index entries. The caller owns the removal of the log itself;
+   * this never touches session persistence.
+   * @param sessionId - The session that no longer exists.
+   * @returns resolution after durability.
+   */
+  forgetSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (state.archivedSessionIds.includes(sessionId)) {
+        await this.setState({ ...state, archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId) })
+      }
+      for (const [id, record] of this.requireTable().entries()) {
+        if (!record.sessionIds.includes(sessionId)) continue
+        const entity = this.entities.get(id)
+        if (entity !== undefined) {
+          await entity.detachSession(sessionId)
+        } else {
+          await this.requireTable().update(id, current => ({
+            ...current,
+            sessionIds: current.sessionIds.filter(candidate => candidate !== sessionId),
+          }))
+        }
+      }
+      this.headers.delete(sessionId)
+      this.sessionPaths.delete(sessionId)
+      this.invalidSessionPaths.delete(sessionId)
+    })
+  }
+
+  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never

@@ -1,0 +1,113 @@
+.panel {
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  padding: 20px 24px 32px;
+  color: var(--dsw-alias-label-primary);
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.refresh,
+.action {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 28px;
+  text-decoration: none;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-specific-selector);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 100ms ease;
+}
+.refresh:hover,
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+.action.danger {
+  color: var(--dsw-alias-state-error-primary);
+}
+.action:disabled,
+.refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.note {
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary-dimmed);
+}
+.list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-specific-tip);
+}
+.rowTitle {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowMeta {
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary-dimmed);
+}
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.failure {
+  font-size: 13px;
+  color: var(--dsw-alias-state-error-primary);
+}
+.confirm {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--dsw-alias-state-error-primary);
+}
+.done {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary-dimmed);
+  word-break: break-all;
+}
+@media (max-width: 600px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rowActions {
+    justify-content: flex-start;
+  }
+}
