@@ -27,6 +27,8 @@ tmp/
 .idea
 mise.toml
 dist-exe/
+/dist/
+apps/desktop/.desktop-build/
 python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-*
 python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/
 python/**/__pycache__/
@@ -41,6 +43,8 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+native/system/test/bin/
 
+# vesta fork additions (kept through the upstream merge)
 # Python bytecode anywhere (deploy/ and services/ carry Python too)
 __pycache__/
