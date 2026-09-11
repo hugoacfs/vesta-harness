@@ -71,9 +71,12 @@ The app assumes the site root unless `DSH_BASE_PATH` is set. With it, `frontend-
 `dsh web` gates the page behind a per-process launch token: the bare URL answers `401 dsh web authentication required` until the browser has opened the tokenized URL once. That exchange sets a signed, host-bound cookie whose signing secret lives in `$DSH_HOME/.credentials.yaml`, so the cookie survives service restarts; only a new browser or device needs the token again.
 
 ```bash
-install -m 755 ~/code/vesta-harness/deploy/vesta/bin/vesta-url ~/.local/bin/vesta-url
-vesta-url    # prints https://vesta.tail22b555.ts.net/harness/?token=… for the running process (VESTA_UNIT=vesta-harness-staging → /harness-staging/)
+install -m 755 ~/code/vesta-harness/deploy/vesta/bin/vesta-url ~/.local/bin/vesta-url && sudo ln -sfn ~/.local/bin/vesta-url /usr/local/bin/vesta-url
+vesta-url            # https://vesta.tail22b555.ts.net/harness/?token=… for the running production process
+vesta-url staging    # …/harness-staging/?token=… (the legacy VESTA_UNIT=vesta-harness-staging form still works)
 ```
+
+`vesta-url` reads the token from the unit's journal (the process's own start line, else the unit's newest one), works from ssh/cron without a login session (it sets the user-bus variables itself), and **probes the URL before printing it**: the harness must answer `303` to the exchange, otherwise it explains what is wrong (`401` = the token belongs to an older process, restart or wait for the new start line; other codes = the reverse proxy or the unit). `--no-check` or `VESTA_URL_CHECK=0` skips the probe; `VESTA_BASE` overrides the base URL for a dedicated-port rollback.
 
 ## Verify
 
@@ -218,7 +221,7 @@ cp ~/code/vesta-harness-staging/deploy/vesta/staging-cordis.patch.yml $H/profile
 cp ~/code/vesta-harness-staging/deploy/vesta/vesta-harness-staging.service ~/.config/systemd/user/ && install -D -m 644 ~/code/vesta-harness-staging/deploy/vesta/vesta-harness-staging.service.d/basepath.conf ~/.config/systemd/user/vesta-harness-staging.service.d/basepath.conf && systemctl --user daemon-reload && systemctl --user enable --now vesta-harness-staging
 # nginx: the /harness-staging block from deploy/vesta/nginx-harness.conf (see “Service and tailnet”); until 2026-09-10 this was `tailscale serve --bg --https=8792 http://127.0.0.1:3082`
 cd /srv/ai/compose/livekit-voice && docker compose --profile staging up -d --build livekit-agent-staging
-VESTA_UNIT=vesta-harness-staging vesta-url      # first-visit URL for the staging instance
+vesta-url staging      # first-visit URL for the staging instance
 ```
 
 Update staging: `cd ~/code/vesta-harness-staging && git fetch origin && git merge --ff-only origin/vesta && pnpm install --frozen-lockfile && pnpm run build && systemctl --user restart vesta-harness-staging` (the `staging` branch is `vesta` plus whatever is being tried; commit there and `git push origin staging`, never hand-copy files into the checkout), plus `docker compose --profile staging up -d --build livekit-agent-staging` when `services/livekit-agent` changed. Scripted check against staging: `ROOM_PREFIX=dshs- docker exec livekit-agent-staging python /tmp/call-check.py <session-id> /tmp/p_hello.wav` (the staging harness's session id, created on `127.0.0.1:3082`). Promotion: merge `staging` into `vesta` and run the production update. Rollback: `systemctl --user disable --now vesta-harness-staging` (the nginx `/harness-staging/` block then answers a branded 502; remove the block to hide the path), `docker compose --profile staging down` — production is never touched. On 2026-09-11 the checkout had drifted (uncommitted copies of production files, nine commits behind) and its settings had lost the staging-only `ceres` model entry; it was reset to `origin/vesta`, rebuilt, and `ceres` restored from `~/.vesta-harness-staging/RECOVERY-bak-20260910T170822/settings.yaml`.

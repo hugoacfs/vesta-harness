@@ -1,34 +1,57 @@
 #!/bin/sh
-# vesta-url — print the Vesta Harness first-visit URL for the tailnet.
+# vesta-url — print a VERIFIED first-visit URL for the Vesta Harness.
 #
-# dsh web prints a startup URL carrying a per-process launch token; opening it
-# once exchanges the token for a signed browser cookie (bound to the request
-# host) that survives service restarts. Run this after a restart when a new
-# browser or device needs to get in. Install: ~/.local/bin/vesta-url
+#   vesta-url             # production  -> https://vesta.tail22b555.ts.net/harness/?token=...
+#   vesta-url staging     # staging     -> https://vesta.tail22b555.ts.net/harness-staging/?token=...
+#   vesta-url prod --no-check   # skip the live check (offline diagnosis)
 #
-# Since 2026-09-10 both harnesses are served under sub-paths of the shared 443
-# host (nginx strips the prefix; DSH_BASE_PATH makes the app emit it):
-#   vesta-url                                    # production -> https://vesta.tail22b555.ts.net/harness/?token=...
-#   VESTA_UNIT=vesta-harness-staging vesta-url   # staging    -> .../harness-staging/?token=...
-# VESTA_BASE overrides the base URL (e.g. a dedicated-port rollback:
-#   VESTA_BASE=https://vesta.tail22b555.ts.net:8790 vesta-url).
+# dsh web mints one launch token per process and logs it once at start
+# ("dsh web: http://127.0.0.1:PORT/?token=..."). Opening the tokenized URL once
+# exchanges it for a signed, host-bound browser cookie that survives restarts;
+# only a new browser/device needs this URL. The token is stable for the life of
+# the process, so the exchange can be probed without consuming anything: this
+# script only prints a URL that the harness has just answered with 303 (accepted).
+#
+# Env: VESTA_UNIT (legacy: vesta-harness | vesta-harness-staging), VESTA_BASE
+# (override the base URL, e.g. a dedicated-port rollback
+# VESTA_BASE=https://vesta.tail22b555.ts.net:8790), VESTA_URL_CHECK=0 (no probe).
+# Install: ~/.local/bin/vesta-url (+ /usr/local/bin symlink so PATH never matters).
 set -eu
-unit=${VESTA_UNIT:-vesta-harness}
-case "$unit" in
-  vesta-harness)         default_base=https://vesta.tail22b555.ts.net/harness ;;
-  vesta-harness-staging) default_base=https://vesta.tail22b555.ts.net/harness-staging ;;
-  *)                     default_base=https://vesta.tail22b555.ts.net ;;
+target=${1:-${VESTA_UNIT:-prod}}
+case "$target" in
+  prod|production|vesta-harness)  unit=vesta-harness;         path=/harness ;;
+  staging|vesta-harness-staging)  unit=vesta-harness-staging; path=/harness-staging ;;
+  -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+  *) echo "vesta-url: unknown target '$target' (use prod or staging)" >&2; exit 2 ;;
 esac
-base=${VESTA_BASE:-$default_base}
-base=${base%/}
-pid=$(systemctl --user show -p MainPID --value "$unit")
-if [ -z "$pid" ] || [ "$pid" = "0" ]; then
-  echo "vesta-url: $unit is not running (systemctl --user status $unit)" >&2
-  exit 1
+check=${VESTA_URL_CHECK:-1}; [ "${2:-}" = "--no-check" ] && check=0
+base=${VESTA_BASE:-https://vesta.tail22b555.ts.net$path}; base=${base%/}
+
+# systemctl/journalctl --user need the user bus; make them work from ssh, cron, or a bare shell.
+: "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"; export XDG_RUNTIME_DIR
+: "${DBUS_SESSION_BUS_ADDRESS:=unix:path=$XDG_RUNTIME_DIR/bus}"; export DBUS_SESSION_BUS_ADDRESS
+
+pid=$(systemctl --user show -p MainPID --value "$unit" 2>/dev/null || echo 0)
+if [ -z "$pid" ] || [ "$pid" = 0 ]; then
+  echo "vesta-url: $unit is not running (systemctl --user status $unit)" >&2; exit 1
 fi
-tok=$(journalctl --user _PID="$pid" -o cat --no-pager 2>/dev/null | grep -oE 'token=[^[:space:]&"]+' | tail -1 | cut -d= -f2-)
+extract() { grep -oE 'token=[^[:space:]&"]+' | tail -1 | cut -d= -f2-; }
+tok=$(journalctl --user _PID="$pid" -o cat --no-pager 2>/dev/null | extract || true)
 if [ -z "$tok" ]; then
-  echo "vesta-url: no startup URL in the journal for pid $pid yet; retry in a few seconds" >&2
-  exit 1
+  # the start line was logged by another pid of the unit (or the pid filter missed): newest line of the unit
+  tok=$(journalctl --user -u "$unit" -o cat --no-pager 2>/dev/null | extract || true)
 fi
-echo "$base/?token=$tok"
+if [ -z "$tok" ]; then
+  echo "vesta-url: no launch URL in the journal for $unit (pid $pid); if it just restarted, retry in a few seconds" >&2; exit 1
+fi
+url="$base/?token=$tok"
+if [ "$check" = 1 ]; then
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "$url" 2>/dev/null || echo 000)
+  case "$code" in
+    303) ;;
+    401) echo "vesta-url: $unit rejected the token (401): the journal line belongs to an older process. Restart the unit or wait for its start line, then retry" >&2; exit 1 ;;
+    000) echo "vesta-url: $base is unreachable from here (curl failed); check tailscale and the reverse proxy" >&2; exit 1 ;;
+    *)   echo "vesta-url: $base answered HTTP $code instead of 303; check 'docker logs reverse-proxy' and 'systemctl --user status $unit'" >&2; exit 1 ;;
+  esac
+fi
+echo "$url"
