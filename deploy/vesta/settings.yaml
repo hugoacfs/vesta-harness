@@ -12,17 +12,16 @@ llm-pi-ai:
       api: openai-completions
       baseURL: http://192.168.0.2:4000/litellm/v1
       apiKeyEnv: VESTA_API_KEY
-      # Provider default: Qwen keeps thinking in typed sessions. The level is a
-      # label only: the qwen-chat-template format sends enable_thinking on/off
-      # and never a level, and the served template then thinks at its own
-      # default, which Qwen calls xhigh. A voice call switches its Session to
-      # `off` for the call's duration (vesta-voice) and restores this afterwards.
+      # Provider default: Qwen keeps thinking in typed sessions. A voice call
+      # switches its Session to off for the call's duration (vesta-voice),
+      # which the qwen-chat-template format turns into
+      # chat_template_kwargs.enable_thinking=false on the request.
       reasoning: xhigh
       # Cap the thinking phase so an answer always fits in maxTokens: pi-ai
       # sends vLLM's top-level thinking_token_budget = min(budget[level],
-      # maxTokens - 1024); xhigh clamps to the `high` budget. Without it an
-      # open-ended planning prompt can spend the whole output budget thinking
-      # and end the turn with "output limit reached" (seen 2026-09-05).
+      # maxTokens - 1024); xhigh clamps to the `high` budget. Verified through
+      # LiteLLM 2026-09-06 (a plan prompt that exhausted 16k tokens of thinking
+      # answered within the cap).
       thinkingBudgets:
         minimal: 1024
         low: 2048
@@ -34,8 +33,6 @@ llm-pi-ai:
         - id: default
           name: Qwen 27B
           contextWindow: 114688
-          # 32k output: thinking (capped below) plus a long answer must both fit;
-          # vLLM allows 150k in+out, LiteLLM's 16,384 max_output_tokens is metadata.
           maxTokens: 32768
           reasoningEfforts:
             off: null
@@ -45,13 +42,14 @@ llm-pi-ai:
             supportsThinkingTokenBudget: true
         # `assistant` (Ornith 9B) retired 2026-09-06: the lane is off (the 3060 carries voice); the
         # alias stays in LiteLLM for legacy clients but is not offered here. Subagents run on `default`.
-# Vesta is dark-first: the ember token layer carries both palettes, but the
-# ambient ground and the brand gradient are designed for dark.
+        # Vesta is dark-first: the ember token layer carries both palettes, but the
+        # ambient ground and the brand gradient are designed for dark.
 ui-theme:
   preference: dark
 agent-default-model:
   provider: vesta
   model: default
+  reasoningEffort: xhigh
 agent-presets:
   default: vesta-default
 llm-deepseek:
