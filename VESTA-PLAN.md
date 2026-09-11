@@ -10,6 +10,13 @@ Living document: agents working on this fork update the status table and the log
 | A | Voice into the session: host bridge plugin, mic + call HUD, Python agent bridge (feature-flagged) | done 2026-09-05 (user confirmations of barge-in / typed follow-up / tone toggle still open) |
 | B | Autonomy and approvals by voice | done 2026-09-05 (scripted verification; user confirmation pending) |
 | C | Cutover `:8790`, retire the standalone `:8480` voice UI, move voice service sources into `services/`, upstream sync drill | done 2026-09-05 |
+| P0 | Upstream reconciliation trial (verdict CLEAN/MESSY, conflict inventory) | started 2026-09-11 |
+| P1 | Upstream sync (only if P0 says CLEAN) | planned |
+| P2 | Welcome notice removal + Telegram notify | planned |
+| P3 | Voice: TTS channel limit, staging dispatch, speed chip, phone HUD + PWA, brand finish | planned |
+| P4 | Session management: archived section, restore, hard delete (confirm + export), export | planned (position set by P0) |
+| P5 | Image reading MCP on CPU | planned |
+| P7 | Upstream sync last (only if P0 says MESSY) | planned |
 
 Upstream base: `deepseek-ai/deepseek-harness@d347e70` (`dsh-v0.1.3-alpha.1`), forked 2026-09-04.
 
@@ -70,6 +77,95 @@ Standing constraints: voice models run on the RTX 3060 only (`GPU-4c4e6e17-…`)
 
 rc.7: `systemctl --user enable --now dsh-web && tailscale serve --bg --https=8790 http://127.0.0.1:3080` (the new harness stays up on `:3081`). Standalone voice UI: `docker compose --profile legacy up -d livekit-webui` + `tailscale serve --bg --https=8480 http://127.0.0.1:3010`. The agent bridge is env-flagged (`DSH_BRIDGE_URL`). Nothing is deleted; `~/.dsh` is never written.
 
+## Plan 2026-09-11 — feature phases (from the interview)
+
+Status: approved 2026-09-11, work started the same day; each phase ends with a documentation break (this file, the runbook, `~/vesta-docs`). Baseline: tag `vesta-stable-2026-09-11` (production and staging on `10251477ea`).
+
+### Decisions recorded (interview)
+
+| Question | Decision |
+|---|---|
+| Upstream sync placement | **Trial decides**: a time-boxed reconciliation trial first; clean → sync as Phase 1, messy → sync as the last phase |
+| Permanent delete | **Hard delete with confirmation + automatic export** to `~/backups/sessions-deleted/` before removal |
+| First batch | **Welcome notice removal + Telegram notify** |
+| Voice, after the defects | **Speed chip**, **phone-friendly HUD** (+ PWA under `/harness/`) |
+| Session management timing | **Trial decides** (after the sync if it goes first; otherwise before it, re-fitted after) |
+| Extras in this plan | **Image reading MCP (CPU)**, **finish the brand pass** |
+| Not in this plan | Landlock tiers, server upgrade runbook (separate track), live words in the call bar, barge-in confirmation, voice-session titles, GitHub Actions off, memory MCP review (backlog) |
+
+### Standing rules for every phase
+
+- Staging first (`~/code/vesta-harness-staging`, branch `staging`, `/harness-staging/`), then merge into `vesta`, then the production update. Commits on `staging`, pushed; never hand-copied files.
+- A change under `packages/client/*` is live only after `pnpm run build` **and** the unit restart.
+- Every production promotion ends with a tag `vesta-stable-<date>` and entries in `VESTA-PLAN.md`, the runbook, and `~/vesta-docs` when the server changes.
+- Upstream packages are not edited except the recorded exceptions in `VESTA.md`; new work goes into Vesta packages (`packages/vesta/*`, `packages/client/ui-vesta-*`) and the `vesta-app` bundle.
+- Voice models only on the RTX 3060; nothing new on the 3090; binds only loopback/LAN/tailnet; secrets only in `.env` / `.credentials.yaml`.
+- The paused server-upgrade runbook runs as its own track; no upgrade phase during a promotion, and its "harness sync" phase is superseded by Phase 0/1/7 here.
+
+### Phase 0 — Upstream reconciliation trial (time box: half a day)
+
+Goal: a verdict, CLEAN or MESSY, plus a conflict inventory. Upstream is `upstream/master` at `c291e7961a` (rc.2 + 139), 1301 commits past the fork base `d347e70390`.
+
+Facts measured 2026-09-11: the fork patches 17 upstream files — the Firefox lossless-JSON check (`packages/util/values` + test), the six base-path files (`gateway/stream-client.ts`, `connection/browser-auth.ts`, `connection/client/rpc.ts`, `file-upload/client/runtime.ts`, `hmr/client/index.ts`, `modules/index.ts`, `host/frontend-static/index.ts`), `apps/cli/package.json` (dep), and the brand assets under `apps/web` (index title, favicon, manifest, three fonts). **None of these changed upstream since the base**, so textual conflicts should be limited to tsconfig aggregates, generated paths and manifests. The risk is semantic: moved UI slots, a changed session codec, re-derived presets.
+
+0.1 Doc fix first: add the six base-path files to the "Fork patches to upstream packages" table in `VESTA.md` (they are unrecorded exceptions to D2), with retire condition "upstream serves under a base path natively". Commit on `vesta`.
+0.2 Trial merge in a scratch worktree on the Mac (no production risk): `git worktree add ../vesta-merge-trial -b merge-trial vesta && git merge upstream/master`. Record conflicts by directory; resolve the mechanical ones (tsconfig refs for our packages, `apps/cli/package.json`, `pnpm run gen-tsconfig-paths`).
+0.3 `pnpm install && pnpm run typecheck && pnpm run build`; fix bundle rows whose ids or slots moved (`conversation.input.right`, `conversation.input.dock`, the brand slot, `connection` row) and our presets, which copy upstream's `standard` composition (re-derive `vesta-default`/`vesta-orch`/`vesta-voice` from the new `standard`).
+0.4 Boot the merged tree on staging: push `merge-trial`, check it out in the staging checkout, build, restart. Checks: existing sessions open (session codec compatibility, the single biggest risk), typed turn through `default`, MCP tools present once, brand/theme/HUD render (headless Firefox screenshot desktop + 390 px), `/harness-staging/` base path still works, the Firefox patch still needed (upstream may have fixed it), settings/presets load without `UNSUPPORTED_*` errors. Voice on staging stays parked (named worker); the bridge route answering 401 is enough here.
+0.5 Verdict rule: CLEAN = builds, sessions open, HUD/brand render, and the remaining fixes are ≤ 1 day; otherwise MESSY. Write the verdict and inventory into `VESTA-PLAN.md`; restore staging to `origin/vesta` afterwards.
+
+### Phase 1 — Upstream sync (only if CLEAN; otherwise this becomes Phase 7)
+
+1.1 Back up `~/.vesta-harness/sessions` and `~/.vesta-harness-staging/sessions` (tar to `~/backups`): sessions written by the new version may not open in the old one, so the rollback needs them.
+1.2 Per `VESTA.md`: `git checkout master && git merge --ff-only upstream/master && git push origin master`; `git checkout vesta && git merge master` using the Phase 0 resolutions; re-apply or retire each patch in the fork-patch table; presets re-derived; `pnpm install && pnpm run gen-tsconfig-paths && pnpm run build`.
+1.3 Staging: build, restart, the Phase 0.4 checklist again plus a scripted RPC turn.
+1.4 Production: build, restart, then a scripted bridged call and one real call; tag `vesta-stable-<date>`; `VESTA-PLAN.md` records the merged upstream SHA; runbook and `~/vesta-docs` updated where behaviour changed (new sidebar, files panel, settings page).
+Rollback: `git reset --hard vesta-stable-2026-09-11`, rebuild, restart, restore the sessions tar if the new codec wrote anything.
+Effort: 1–2 days.
+
+### Phase 2 — First batch: welcome notice + Telegram notify
+
+2.1 Welcome notice. Mechanism (read 2026-09-11): the dialog lives in upstream's `ui-settings-models`; it is acknowledged by writing `ui-onboarding.welcomeNoticeVersion = 2026-08-13.1` into a settings scope, and for a remote browser that scope runs in memory mode ("advance only this process for a remote browser"), so the acknowledgement never persists and every tailnet visit sees the dialog. Options in order of preference: (a) a settings-scope option that persists for remote browsers, if one exists; (b) a Vesta client plugin that acknowledges the store at boot, if the store or a slot is reachable; (c) a small recorded patch to `ui-settings-models` gating the dialog behind a config flag (`welcomeNotice: false`), listed in the fork-patch table with retire condition "upstream drops the notice" (rc.2 still has it). Verify: a fresh headless-Firefox profile lands on the app with no dialog; the "Continue" path still works when the flag is on.
+2.2 Telegram notify: new host plugin `packages/vesta/vesta-notify` that observes session events the way `vesta-voice`'s bridge does (passively; it answers nothing). Triggers: (i) a turn that ran ≥ `minTurnSeconds` (default 120) finished while no client stream is attached to that session (gateway stream-mux subscriber count, else a last-activity heuristic); (ii) an approval or ask-user question unanswered for ≥ `approvalWaitSeconds` (default 60). Message: session title, the trigger, the first 200 characters of the last assistant text, and the `/harness/` link. Delivery through the mounted MCP server (`http://127.0.0.1:7335/mcp`, tool `notify`), never the bot token. Rate limit one message per session per 5 minutes; `quietHours`; config on the bundle row. Verify on staging with a scripted long turn and the browser closed, and with a `read-only` session that hits an escalation approval.
+2.3 Promote: staging → `vesta` → production; tag; docs (`packages/vesta/vesta-notify/README.md`, runbook, `~/vesta-docs/services/telegram-mcp.md` gets a "used by the harness" paragraph).
+Effort: 1 day.
+
+### Phase 3 — Voice: defects, then speed chip, phone HUD, brand finish
+
+3.1 Defects. (a) TTS channel limit: moshi `batch_size = 2` for TTS; a long tool-heavy call briefly needed a third socket and LiveKit retry-stormed (`no free channels`, `retrying in 2.0s`). Fix in `services/livekit-agent/kyutai.py`: one synthesis socket per call at a time (queue the next utterance and the fillers behind it), a bounded retry (fail the utterance after 3 attempts with a log line, never a storm), and measure whether `batch_size` 3 fits the 3060 (about 2.2 GB free today) before touching `configs/vesta.toml`. (b) Staging dispatch: when `agentName` is set, the token route calls LiveKit's `AgentDispatchClient.createDispatch(room, agentName)` (server SDK) so the named staging worker gets `dshs-` rooms; production stays unnamed. Verify: scripted caller on staging with `ROOM_PREFIX=dshs-` binds and answers; a 30 s tool-heavy scripted call on production shows no `no free channels`.
+3.2 Speed chip (old plan A4): a 1.0 / 1.1 / 1.2 / 1.3 chip in the call bar → host route `POST /vesta/voice/config` → bridge frame `config { speed }` → `KyutaiTTS.speed` (the pacer stretches, pitch preserved); persisted in the harness settings section `vesta-voice.speed`; default stays the env `TTS_SPEED`. Verify: a scripted call at 1.0 and 1.3 logs the applied speed and starves 0.
+3.3 Phone HUD + PWA: test on your phone over the tailnet; fix the call bar, mic menu and composer at ≤ 400 px (wrap the meter/signal glyph, larger tap targets); `manifest.webmanifest` `start_url` and `scope` under `/harness/` (today `/`), icons; verify "Add to Home Screen" and the microphone permission flow on iOS Safari and Android Chrome.
+3.4 Brand finish: screenshot review on staging (desktop + phone), list what the 09-10 savepoint left open (wordmark, caret, emblem, ambient ground), finish it, document in `packages/client/ui-vesta-brand/README.md`.
+3.5 Promote; tag; runbook "Smooth speech"/"Staging instance" updated; `~/vesta-docs/services/voice.md`.
+Effort: 2–3 days.
+
+### Phase 4 — Session management (position set by the Phase 0 verdict)
+
+4.1 Host plugin `packages/vesta/vesta-sessions` with RPCs: `vesta/session/unarchive` (remove the id from `archivedSessionIds` through the workspace registry, else the workspace controller's model; emit the workspace event so every client updates), `vesta/session/export` (markdown transcript + the raw `session.v2.jsonl.zstd` + attachments as a tar under `~/backups/sessions-export/`), `vesta/session/delete` (refuse a running session or one bound to a call; export to `~/backups/sessions-deleted/<id>-<date>.tar`; remove the session directory, the workspace references, the `session_projcache` entry and the search-index rows; emit the event).
+4.2 Client plugin `ui-vesta-sessions`: an "Archived" section per workspace with Restore / Export / Delete; "Delete permanently…" in the session row menu; confirmation dialog showing the title and the export path; toast on completion.
+4.3 Verify on staging with throwaway sessions: restore returns a session to the sidebar; delete removes it everywhere, the export tar opens, the harness stays healthy when the deleted session was open in another tab; a call-bound session is refused.
+4.4 Promote; tag; runbook section "Sessions: archive, restore, delete, export"; `~/vesta-docs/services/vesta-harness.md` Sessions section.
+Effort: 2 days (+ half a day of re-fit in Phase 7 if the sync goes last).
+
+### Phase 5 — Image reading MCP (CPU only)
+
+5.1 Compose project `/srv/ai/compose/vision-mcp`: Ollama on CPU (loopback `127.0.0.1:11434`, CPU and memory quota, short `keep_alive`, model `qwen2.5vl:3b`) plus a small MCP server exposing `read_image(image, question?)` → text. Nothing touches the GPUs.
+5.2 Mount through the home patch (`deploy/vesta/home-cordis.patch.yml`, machine-dependent) as `mcp__vision__read_image`. Set the pi-ai image-offload budget so the text-only `default` lane never receives image bytes (the load-bearing setting); confirm the attachment handle the model sees is resolvable by the tool (the number one risk; the tool needs read access to the attachment store). A LiteLLM `vision` alias is optional and gets its own go/no-go.
+5.3 Verify: attach a screenshot in a typed session and ask what it says; by voice, "read the file at <path>". Docs: `~/vesta-docs/services/vision-mcp.md`, README inventory row, runbook.
+Effort: 1–2 days.
+
+### Phase 7 — Upstream sync last (only if Phase 0 said MESSY)
+
+Same steps as Phase 1, using the Phase 0 inventory, then re-fit what Phases 2–5 added: the session UI hooks (sidebar), the notify observer (event names), the onboarding suppression (if it became a patch). Verify everything from the Phase 1 checklist plus each feature's own check. Effort: 2–3 days.
+
+### Order and effort
+
+Phase 0 (0.5 d) → Phase 1 if CLEAN (1–2 d) → Phase 2 (1 d) → Phase 3 (2–3 d) → Phase 4 (2 d) → Phase 5 (1–2 d) → Phase 7 if MESSY (2–3 d). Roughly two working weeks of agent time, in batches small enough that each promotion is one merge, one build, one restart, one tag.
+
+### Backlog (deliberately not scheduled)
+
+Landlock permission tiers (needs `musl-tools` via sudo); live words in the call bar; barge-in confirmation; voice-session titles from the main model; GitHub Actions off on the fork; memory MCP review; a Vesta welcome page replacing the upstream notice.
+
 ## Log
 
 - 2026-09-04 — Fork cloned (`d347e70`), `vesta` branch created locally and on vesta, `pnpm install` green on both. Scaffolded the three Vesta packages, the bundle, fonts, deploy tree; aggregate references added.
@@ -119,3 +215,4 @@ rc.7: `systemctl --user enable --now dsh-web && tailscale serve --bg --https=879
 - 2026-09-11 — Post-handover pass. Found and fixed: the font-URL fix (`6eaee28660`) had been committed after the last production build, so `/harness` served the pre-fix theme bundle (fonts 404 → fallbacks) — rebuilt and restarted; search was mounted twice (bundle `search` + home patch `vesta-search`; a session's catalogue carried both sets) — home-patch row removed in both homes, preset text repointed at `mcp__search__*`, one set verified in a fresh session; the staging checkout had drifted (uncommitted copies of production files, nine commits behind) and had lost its staging-only `ceres` entry — reset to `origin/vesta`, rebuilt, `ceres` restored, branch pushed; 52 MB of `*.bak-*`/`dist.bak-*` litter moved from both checkouts to `~/backups/harness-checkouts-bak-20260911/`; drop-ins, nginx blocks, home patch and `vesta-url` (now printing the `/harness/` URL) versioned under `deploy/vesta`; settings template default preset `vesta-default`. Verified under the sub-path: token exchange `303 → /harness/`, `<base href>`, fonts and bundles 200, RPC; scripted bridged call (greeting 8.8 s after join including dispatch, replies 2.0 s / 1.5 s after the question, the tool turn spoke the server time, fillers `Mm-hm.` / `Right.` / `Checking.`, audio starves 0); headless-Firefox call through the composer mic (Connecting → Listening 1.5 s → Speaking 7.5 s, greeting with thinking off, fonts loaded, no failed requests). Still owed by the user: one real call for the downlink concealment numbers (A0). The blank “chat” session the browser check bound to was archived afterwards.
 - 2026-09-11 — Stable baseline. The user confirmed voice is fine after the sub-path move, so the pending downlink-concealment measurement (plan A0/A3) is closed unless the halts recur. Settings template synced to the live production home (it had drifted in comments and lacked `agent-default-model.reasoningEffort: xhigh`); the 09-06 preset backups moved out of both homes into `~/backups/harness-checkouts-bak-20260911/homes/`. Tag `vesta-stable-2026-09-11` marks this commit. Discipline from here: staging first, then merge into `vesta` and the production update; a client-package change is live only after build and restart; no upstream sync (1301 commits, `dsh-v0.1.5-rc.2`) until planned on its own.
 - 2026-09-11 — `vesta-url` rewritten so it gives a correct URL every time: `vesta-url [prod|staging]` (legacy `VESTA_UNIT` kept), user-bus variables set for ssh/cron shells, token from the process's own journal line with the unit's newest line as fallback, and a live probe that only prints a URL the harness answered `303` to (a `401` names the stale-token case). Installed at `~/.local/bin/vesta-url` with a `/usr/local/bin` symlink so PATH never matters. Tested from ssh, `env -i`, and a non-login zsh.
+- 2026-09-11 — Feature plan agreed through an interview (decisions in the plan section above): trial-decided upstream sync, hard delete with confirmation and export, first batch = welcome notice + Telegram notify, voice = defects then speed chip and phone HUD, image reading on CPU, brand finish; Landlock and the server upgrade stay separate. Work started with Phase 0.
