@@ -25,6 +25,7 @@ export const zh = {
   'hud.emotionOn': '正在分享语气（点击隐藏）',
   'hud.emotionOff': '语气已隐藏（点击分享）',
   'hud.end': '结束通话',
+  'hud.speed': '语速',
 } satisfies Record<string, string>
 
 /** The vesta.voice namespace key union. */
@@ -52,4 +53,5 @@ export const en = {
   'hud.emotionOn': 'Sharing your tone (click to hide)',
   'hud.emotionOff': 'Tone hidden (click to share)',
   'hud.end': 'End call',
+  'hud.speed': 'Speech speed',
 } satisfies Record<VoiceKey, string>

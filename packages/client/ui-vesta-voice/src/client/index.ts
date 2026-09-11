@@ -69,6 +69,7 @@ export function apply(ctx: ClientContext): void {
         toggleMute: () => calls.toggleMute(),
         selectDevice: deviceId => calls.selectDevice(deviceId),
         setEmotion: enabled => calls.setEmotion(enabled),
+        setSpeed: speed => calls.setSpeed(speed),
       }
     },
   }, CallHud))

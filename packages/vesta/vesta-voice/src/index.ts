@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import { VoiceBridge } from './bridge.ts'
 import { registerVoiceRoutes } from './routes.ts'
 
-export { EMOTION_PATH, TOKEN_PATH } from './routes.ts'
+export { CONFIG_PATH, EMOTION_PATH, TOKEN_PATH } from './routes.ts'
 export { VOICE_SECTION, VOICE_SOURCE_PLUGIN, VOICE_TURN_NOTE } from './prompt.ts'
 export type { AgentToHost, HostToAgent } from './types.ts'
 
@@ -82,5 +82,5 @@ export function apply(ctx: Context, config: Config): void {
     handler: (req, socket, head) => bridge.handleUpgrade(req, socket, head),
   }), 'vesta-voice: bridge upgrade route')
   ctx.effect(() => () => { bridge.dispose() }, 'vesta-voice: bound rooms')
-  registerVoiceRoutes(ctx, config)
+  registerVoiceRoutes(ctx, config, bridge)
 }

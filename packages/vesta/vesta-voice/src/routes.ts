@@ -14,6 +14,12 @@ import type { Config } from './index.ts'
 export const TOKEN_PATH = '/api/vesta/voice/token'
 /** Browser route reading and writing the STT sidecar's perception flag. */
 export const EMOTION_PATH = '/api/vesta/voice/emotion'
+export const CONFIG_PATH = '/api/vesta/voice/config'
+
+/** The bridge face the config route needs. */
+export interface VoiceBridgeLike {
+  configure(sessionId: string, speed: number): boolean
+}
 
 /** The slice of the Host Connection service these routes use (structural, like session-log-export). */
 interface VoiceConnection {
@@ -36,8 +42,14 @@ function connectionOf(ctx: Context): VoiceConnection {
  * @param ctx - the plugin context carrying credentials and the Connection service.
  * @param config - resolved plugin config.
  */
-export function registerVoiceRoutes(ctx: Context, config: Config): void {
+export function registerVoiceRoutes(ctx: Context, config: Config, bridge: VoiceBridgeLike): void {
   const connection = connectionOf(ctx)
+  connection.fetch.register({
+    path: CONFIG_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: request => configResponse(bridge, request),
+  })
   connection.fetch.register({
     path: TOKEN_PATH,
     methods: ['GET'],
@@ -50,6 +62,23 @@ export function registerVoiceRoutes(ctx: Context, config: Config): void {
     requestBody: 'buffered',
     fetch: request => emotionResponse(config, request),
   })
+}
+
+/** `POST /api/vesta/voice/config` with `{ sessionId, speed }`: forward playback settings to the bound agent job. */
+async function configResponse(bridge: VoiceBridgeLike, request: Request): Promise<Response> {
+  let body: { sessionId?: unknown; speed?: unknown }
+  try {
+    body = (await request.json()) as { sessionId?: unknown; speed?: unknown }
+  } catch {
+    return new Response('body must be JSON', { status: 400 })
+  }
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId : ''
+  const speed = typeof body.speed === 'number' && Number.isFinite(body.speed) ? body.speed : Number.NaN
+  if (sessionId === '' || Number.isNaN(speed) || speed < 1 || speed > 2) {
+    return new Response('expected { sessionId: string, speed: 1..2 }', { status: 400 })
+  }
+  if (!bridge.configure(sessionId, speed)) return new Response('no call bound to that session', { status: 404 })
+  return Response.json({ ok: true, speed })
 }
 
 async function tokenResponse(ctx: Context, config: Config, request: Request): Promise<Response> {

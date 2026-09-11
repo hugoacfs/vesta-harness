@@ -3,6 +3,7 @@ import { useState, type CSSProperties } from 'react'
 import { IconChevronDownOutline14, Menu, Tooltip, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { SPEED_CHOICES } from './call.ts'
 import type { AgentState, CallStatus, createVoiceCallStore } from './store.ts'
 import type { VoiceKey } from './locales.ts'
 import { EndGlyph, HeartGlyph, MicGlyph, MicOffGlyph } from './icons.tsx'
@@ -18,6 +19,8 @@ export interface CallHudInjected {
   selectDevice: (deviceId: string) => Promise<void>
   /** Flip the STT sidecar's perception flag. */
   setEmotion: (enabled: boolean) => Promise<void>
+  /** Change the speech speed for this call (remembered for the next ones). */
+  setSpeed: (speed: number) => Promise<void>
 }
 
 /** Full component props: runtime share (dock owner values) + store share + locale seat + injected face. */
@@ -48,13 +51,14 @@ function stateKey(status: CallStatus, agentState: AgentState): VoiceKey {
  * @param props - composed slot props.
  * @returns the HUD, or null when this Session has no call.
  */
-export function CallHud({ t, sessionId, useStore, end, toggleMute, selectDevice, setEmotion }: CallHudProps) {
+export function CallHud({ t, sessionId, useStore, end, toggleMute, selectDevice, setEmotion, setSpeed }: CallHudProps) {
   const owner = useStore(s => s.sessionId)
   const status = useStore(s => s.status)
   const agentState = useStore(s => s.agentState)
   const muted = useStore(s => s.muted)
   const emotion = useStore(s => s.emotion)
   const emotionAvailable = useStore(s => s.emotionAvailable)
+  const speed = useStore(s => s.speed)
   const level = useStore(s => s.level)
   const micLevel = useStore(s => s.micLevel)
   const devices = useStore(s => s.devices)
@@ -63,6 +67,7 @@ export function CallHud({ t, sessionId, useStore, end, toggleMute, selectDevice,
   const signal = useStore(s => s.signal)
   const error = useStore(s => s.error)
   const [deviceMenu, setDeviceMenu] = useState(false)
+  const [speedMenu, setSpeedMenu] = useState(false)
   if (owner === null || owner !== String(sessionId) || status === 'idle') return null
   const orbStyle = { '--vesta-orb-level': String(agentState === 'speaking' ? level : 0) } as CSSProperties
   const active = devices.find(device => device.id === deviceId)
@@ -74,6 +79,7 @@ export function CallHud({ t, sessionId, useStore, end, toggleMute, selectDevice,
   const muteLabel = muted ? t('hud.unmute') : t('hud.mute')
   const signalTitle = `${t('hud.signal')}: ${signal.quality} · concealed ${String(signal.concealedMs)} ms in ${String(signal.concealmentEvents)} events · lost ${String(signal.packetsLost)} · jitter ${String(signal.jitterMs)} ms`
   const toneLabel = t(emotion ? 'hud.emotionOn' : 'hud.emotionOff')
+  const speedItems: MenuEntry[] = SPEED_CHOICES.map(choice => ({ id: String(choice), label: `${choice.toFixed(1)}×` }))
   return (
     <div className={css.dock}>
       <div className={css.bar} role="status" aria-live="polite">
@@ -136,6 +142,35 @@ export function CallHud({ t, sessionId, useStore, end, toggleMute, selectDevice,
               )}
             />
           </div>
+          <Menu
+            open={speedMenu}
+            portal
+            side="top"
+            align="end"
+            items={speedItems}
+            selectedId={String(speed)}
+            onSelect={(id) => {
+              setSpeedMenu(false)
+              const choice = Number(id)
+              if (SPEED_CHOICES.includes(choice)) void setSpeed(choice)
+            }}
+            onClose={() => { setSpeedMenu(false) }}
+            anchor={(
+              <Tooltip label={t('hud.speed')} side="top" delayMs={500}>
+                <button
+                  type="button"
+                  className={css.chip}
+                  aria-label={t('hud.speed')}
+                  aria-haspopup="listbox"
+                  aria-expanded={speedMenu}
+                  onClick={() => { setSpeedMenu(open => !open) }}
+                >
+                  {speed.toFixed(1)}×
+                  <IconChevronDownOutline14 size={12} />
+                </button>
+              </Tooltip>
+            )}
+          />
           {emotionAvailable && (
             <Tooltip label={toneLabel} side="top" delayMs={500}>
               <button

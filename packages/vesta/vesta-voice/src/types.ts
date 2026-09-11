@@ -115,4 +115,9 @@ export type HostToAgent =
     readonly type: 'error'
     readonly message: string
   }
+  | {
+    /** Playback settings from the HUD: speech speed factor (the agent clamps it to 1.0–2.0). */
+    readonly type: 'config'
+    readonly speed: number
+  }
   | { readonly type: 'pong' }

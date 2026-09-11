@@ -472,6 +472,12 @@ class DshBridge:
         elif kind == "permission":
             self.permission = str(frame.get("preset") or "custom")
             log.info("harness permission now %s", self.permission)
+        elif kind == "config":
+            speed = frame.get("speed")
+            tts_engine = getattr(self, "_tts", None)
+            if isinstance(speed, (int, float)) and tts_engine is not None and hasattr(tts_engine, "speed"):
+                tts_engine.speed = float(speed)   # clamped by the engine; applies from the next utterance
+                log.info("harness config: speech speed %.2f", tts_engine.speed)
         elif kind == "say":
             text = str(frame.get("text", ""))
             if self._command_reply is not None and not self._command_reply.done():

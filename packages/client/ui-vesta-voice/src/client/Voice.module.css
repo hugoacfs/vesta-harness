@@ -264,6 +264,27 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* Speed chip: a 28px capsule showing the factor as text; opens the speed menu. */
+.chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 6px 0 10px;
+  border: none;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-specific-selector);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 100ms ease;
+}
+.chip:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
 /* End call: the composer's primary circle (34px, white glyph) in the error fill. */
 .end {
   display: grid;
@@ -285,6 +306,7 @@
 }
 
 .control:focus-visible,
+.chip:focus-visible,
 .splitMain:focus-visible,
 .splitCaret:focus-visible,
 .end:focus-visible {

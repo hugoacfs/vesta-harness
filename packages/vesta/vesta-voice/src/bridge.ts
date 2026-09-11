@@ -38,6 +38,8 @@ interface Binding {
   readonly sessionId: SessionId
   readonly agent: Agent
   readonly socket: WebSocket
+  /** Send one frame to the agent job while the socket is open. */
+  readonly send: (frame: HostToAgent) => void
   readonly disposers: (() => void)[]
   /** The Session's reasoning effort before the call switched it off, restored on unbind. */
   restoreReasoning: { provider: string; model: string; reasoningEffort: string | undefined } | undefined
@@ -172,14 +174,27 @@ export class VoiceBridge {
     this.wss.close()
   }
 
+  /**
+   * Apply call settings from the HUD to the agent job bound to a Session.
+   * @param sessionId - the Session whose call is configured.
+   * @param speed - speech speed factor; the agent clamps it to its range.
+   * @returns false when no room is bound to that Session.
+   */
+  configure(sessionId: string, speed: number): boolean {
+    const binding = [...this.bindings].find(candidate => String(candidate.sessionId) === sessionId)
+    if (binding === undefined) return false
+    binding.send({ type: 'config', speed })
+    return true
+  }
+
   private bind(socket: WebSocket, sessionId: SessionId, agent: Agent): void {
-    const binding: Binding = {
-      sessionId, agent, socket, disposers: [], restoreReasoning: undefined, approvals: new Map(), questions: new Map(),
-    }
-    this.bindings.add(binding)
     const send = (frame: HostToAgent): void => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(frame))
     }
+    const binding: Binding = {
+      sessionId, agent, socket, send, disposers: [], restoreReasoning: undefined, approvals: new Map(), questions: new Map(),
+    }
+    this.bindings.add(binding)
     // Reasoning off first, then the greeting: thinking on and off render different
     // system prompts, so a greeting built before the switch would warm the wrong prefix.
     const quiet = this.quietReasoning(binding)

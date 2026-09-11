@@ -43,6 +43,8 @@ export interface VoiceCallState {
   emotion: boolean
   /** Whether the perception toggle is served by the Host at all. */
   emotionAvailable: boolean
+  /** Speech speed factor chosen in the HUD (1.0–1.3); the agent applies it from its next utterance. */
+  speed: number
   /** Agent audio level, 0..1, throttled. */
   level: number
   /** Local microphone level, 0..1, throttled: what the room is hearing from you. */
@@ -66,6 +68,7 @@ type VoiceCallActions = {
   agentState: (draft: VoiceCallState, state: AgentState) => void
   muted: (draft: VoiceCallState, muted: boolean) => void
   emotion: (draft: VoiceCallState, enabled: boolean, available: boolean) => void
+  speed: (draft: VoiceCallState, speed: number) => void
   level: (draft: VoiceCallState, level: number) => void
   micLevel: (draft: VoiceCallState, level: number) => void
   devices: (draft: VoiceCallState, devices: readonly MicDevice[], activeId: string | null) => void
@@ -87,6 +90,7 @@ function initialState(): VoiceCallState {
     muted: false,
     emotion: true,
     emotionAvailable: false,
+    speed: 1.2,
     level: 0,
     micLevel: 0,
     devices: [],
@@ -129,6 +133,7 @@ export function createVoiceCallStore(): EngineStoreHandle<VoiceCallState, VoiceC
         d.emotionAvailable = available
       },
       level: (d, level: number) => { d.level = level },
+      speed: (d, speed: number) => { d.speed = speed },
       micLevel: (d, level: number) => { d.micLevel = level },
       devices: (d, devices: readonly MicDevice[], activeId: string | null) => {
         d.devices = devices

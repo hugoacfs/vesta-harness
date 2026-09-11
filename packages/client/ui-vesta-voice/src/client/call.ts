@@ -24,6 +24,13 @@ import type { AgentState, createVoiceCallStore, MicDevice, SignalState } from '.
 export const TOKEN_PATH = '/api/vesta/voice/token'
 /** Host route reading and writing the STT sidecar's perception flag. */
 export const EMOTION_PATH = '/api/vesta/voice/emotion'
+/** Host route taking `{ sessionId, speed }` for the bound call. */
+export const CONFIG_PATH = '/api/vesta/voice/config'
+/** localStorage key remembering the chosen speech speed across calls. */
+export const SPEED_KEY = 'vesta.voice.speed'
+/** Speeds the HUD offers; the agent's default is its `TTS_SPEED` (1.2 on vesta). */
+export const SPEED_CHOICES: readonly number[] = [1, 1.1, 1.2, 1.3]
+const DEFAULT_SPEED = 1.2
 /** localStorage key remembering the chosen microphone across calls. */
 export const MIC_DEVICE_KEY = 'vesta.voice.micDeviceId'
 /** localStorage key (value `1`) that prints the receiver stats to the console once a second. */
@@ -95,6 +102,23 @@ function readPreferredMic(): string | undefined {
     return globalThis.localStorage.getItem(MIC_DEVICE_KEY) ?? undefined
   } catch {
     return undefined
+  }
+}
+
+function readPreferredSpeed(): number {
+  try {
+    const value = Number(globalThis.localStorage.getItem(SPEED_KEY))
+    return SPEED_CHOICES.includes(value) ? value : DEFAULT_SPEED
+  } catch {
+    return DEFAULT_SPEED
+  }
+}
+
+function writePreferredSpeed(speed: number): void {
+  try {
+    globalThis.localStorage.setItem(SPEED_KEY, String(speed))
+  } catch {
+    // Storage may be unavailable (private mode); the choice then lasts for the call.
   }
 }
 
@@ -213,6 +237,11 @@ export class VoiceCallController {
       this.watchMic()
       void this.refreshDevices()
       void this.refreshEmotion()
+      // The agent job binds the bridge a moment after the room fills; apply the remembered
+      // speed once it has (a few tries), so a call starts at the user's pace.
+      const speed = readPreferredSpeed()
+      actions.speed(speed)
+      void this.pushSpeed(sessionId, speed, 6)
     } catch (error) {
       actions.failed(messageOf(error))
       // Leave the room on the failure path too, or the participant lingers
@@ -268,6 +297,35 @@ export class VoiceCallController {
    * Flip the STT sidecar's perception flag through the Host.
    * @param enabled - whether transcripts should carry tone and laughter notes.
    */
+  /** Change the speech speed for the current call and remember it for the next ones. */
+  async setSpeed(speed: number): Promise<void> {
+    const actions = this.actions
+    const sessionId = this.sessionId
+    if (actions === undefined || sessionId === undefined) return
+    writePreferredSpeed(speed)
+    actions.speed(speed)
+    await this.pushSpeed(sessionId, speed, 1)
+  }
+
+  private async pushSpeed(sessionId: string, speed: number, attempts: number): Promise<void> {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (this.sessionId !== sessionId || this.room === undefined) return
+      try {
+        const response = await fetch(new URL(CONFIG_PATH.replace(/^\/+/, ''), hostBase()), {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId, speed }),
+        })
+        if (response.ok) return
+        if (response.status !== 404) return   // a refusal other than "not bound yet" is final
+      } catch {
+        return
+      }
+      await new Promise(resolve => setTimeout(resolve, 1500))
+    }
+  }
+
   async setEmotion(enabled: boolean): Promise<void> {
     const actions = this.actions
     if (actions === undefined) return
