@@ -45,6 +45,8 @@ pnpm install && pnpm run gen-tsconfig-paths && pnpm run build
 
 Record the merged upstream SHA in `VESTA-PLAN.md`.
 
+**Sync record.** 2026-09-11 — `upstream/master` `c291e7961a` (0.1.5-rc.2 + 139) merged as `08ccc0210a`; `master` = `c291e7961a`. Lessons kept for the next one: create the merge commit in a checkout whose `node_modules` match the merged lockfile (the pre-commit hook bundles client packages); re-derive the presets from upstream's `standard` (this time a `present` row appeared and the persona config renamed `text` → `prefix`); build with `deploy/vesta/bin/vesta-build`, which sets the build-time `DSH_CLIENT_TITLE`; tar both homes' sessions first, because the session format moves (v2 → v3, migrated lazily on open, the old file retained).
+
 ## Fork patches to upstream packages
 
 D2 says upstream packages are never edited; these are the deliberate exceptions, each with its retire condition. Re-apply or retire them on every upstream sync.

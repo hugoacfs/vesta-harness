@@ -28,9 +28,8 @@ sudo apt-get install -y musl-tools
 
 ```bash
 cd ~/code/vesta-harness
-pnpm install --frozen-lockfile
 pnpm --filter @deepseek-ai/node-addon-landlock-run-workspace run build:native   # sandbox binary (needs musl-tools)
-pnpm run build                                                        # host + client + frontend
+deploy/vesta/bin/vesta-build   # = pnpm install --frozen-lockfile && pnpm run build, with DSH_CLIENT_TITLE="vesta harness" (the tab title since 0.1.5)
 ```
 
 ## Home
@@ -84,6 +83,12 @@ vesta-url staging    # …/harness-staging/?token=… (the legacy VESTA_UNIT=ves
 - `https://vesta.tail22b555.ts.net/harness/` → `401` without the cookie; with it the index carries `<base href="/harness/">`, the three Vesta fonts (Inter, Space Grotesk, JetBrains Mono) load under the prefix, and the page shows the brand (veiled-goddess emblem, lowercase “vesta harness_” wordmark) on the ember theme.
 - A new session answers through Qwen (`default`); `mcp__memory__*`, `mcp__search__*` and `mcp__telegram-notify__notify` appear once each in the tool list; the hero shows `Vesta Default`; `/permission` lists `read-only`, `workspace-write`, `danger-full-access`.
 - Voice: the composer's “Start a voice call” goes Connecting → Listening → Speaking (the greeting) and `docker logs livekit-agent` shows `bridge bound: room=dsh-session-…`.
+- Since the 0.1.5 sync: `curl -b <jar> https://vesta.tail22b555.ts.net/harness/open-in-app/apps` → `200` (upstream's desktop hand-off probe, made base-relative in the fork); a session RPC `session/create` with each preset (`vesta-default`, `vesta-orch`, `vesta-voice`) returns a session id — a preset that fails to mount breaks new sessions AND resumes, so check it right after every update.
+
+## Upstream base 0.1.5-rc.2 (synced 2026-09-11)
+
+The fork now sits on `upstream/master` `c291e7961a` (merge `08ccc0210a`; procedure and lessons in `VESTA.md` → “Upstream sync”). What changed for operators: (1) build with `deploy/vesta/bin/vesta-build`; (2) presets follow upstream's `standard` composition — the persona row's config field is `prefix` (was `text`; a stale preset fails to mount with `$.prefix missing required value`), and `present` (file-delivery cards) is a bare tool row; (3) sessions are format v3, migrated lazily from v2 when opened (the v2 file stays beside the v3 one), so tar `~/.vesta-harness/sessions` before any downgrade; (4) the sidebar keeps workspaces collapsed until clicked and shows a session's title only once it has been opened (projection cache), the composer asks for a workspace before the first message, and the header's “···” menu holds the session log; (5) the tab title is `<session> — vesta harness`; (6) new upstream tools: `read_image`, `present`, and the right-hand panel with files and previews.
+
 
 ## Voice (Phase A)
 
@@ -177,8 +182,10 @@ Ask it to "list the tool names starting with mcp__" to confirm the memory and se
 ## Update
 
 ```bash
-cd ~/code/vesta-harness && git pull --ff-only origin vesta && pnpm install --frozen-lockfile && pnpm run build && systemctl --user restart vesta-harness
+cd ~/code/vesta-harness && git pull --ff-only origin vesta && deploy/vesta/bin/vesta-build && systemctl --user restart vesta-harness
 ```
+
+`vesta-build` is `pnpm install --frozen-lockfile && pnpm run build` with `DSH_CLIENT_TITLE="vesta harness"`: since the 0.1.5 sync the tab title is set at runtime from that build-time variable (a bare `pnpm run build` yields "DSH Local Build").
 
 A commit that touches a client plugin (`packages/client/*`) is not live until `pnpm run build` **and** the restart have both run after it: on 2026-09-10 the font-URL fix was committed after the last build and stayed undeployed until the next day.
 
@@ -224,7 +231,7 @@ cd /srv/ai/compose/livekit-voice && docker compose --profile staging up -d --bui
 vesta-url staging      # first-visit URL for the staging instance
 ```
 
-Update staging: `cd ~/code/vesta-harness-staging && git fetch origin && git merge --ff-only origin/vesta && pnpm install --frozen-lockfile && pnpm run build && systemctl --user restart vesta-harness-staging` (the `staging` branch is `vesta` plus whatever is being tried; commit there and `git push origin staging`, never hand-copy files into the checkout), plus `docker compose --profile staging up -d --build livekit-agent-staging` when `services/livekit-agent` changed. Scripted check against staging: `ROOM_PREFIX=dshs- docker exec livekit-agent-staging python /tmp/call-check.py <session-id> /tmp/p_hello.wav` (the staging harness's session id, created on `127.0.0.1:3082`). Promotion: merge `staging` into `vesta` and run the production update. Rollback: `systemctl --user disable --now vesta-harness-staging` (the nginx `/harness-staging/` block then answers a branded 502; remove the block to hide the path), `docker compose --profile staging down` — production is never touched. On 2026-09-11 the checkout had drifted (uncommitted copies of production files, nine commits behind) and its settings had lost the staging-only `ceres` model entry; it was reset to `origin/vesta`, rebuilt, and `ceres` restored from `~/.vesta-harness-staging/RECOVERY-bak-20260910T170822/settings.yaml`.
+Update staging: `cd ~/code/vesta-harness-staging && git fetch origin && git merge --ff-only origin/vesta && deploy/vesta/bin/vesta-build && systemctl --user restart vesta-harness-staging` (the `staging` branch is `vesta` plus whatever is being tried; commit there and `git push origin staging`, never hand-copy files into the checkout), plus `docker compose --profile staging up -d --build livekit-agent-staging` when `services/livekit-agent` changed. Scripted check against staging: `ROOM_PREFIX=dshs- docker exec livekit-agent-staging python /tmp/call-check.py <session-id> /tmp/p_hello.wav` (the staging harness's session id, created on `127.0.0.1:3082`). Promotion: merge `staging` into `vesta` and run the production update. Rollback: `systemctl --user disable --now vesta-harness-staging` (the nginx `/harness-staging/` block then answers a branded 502; remove the block to hide the path), `docker compose --profile staging down` — production is never touched. On 2026-09-11 the checkout had drifted (uncommitted copies of production files, nine commits behind) and its settings had lost the staging-only `ceres` model entry; it was reset to `origin/vesta`, rebuilt, and `ceres` restored from `~/.vesta-harness-staging/RECOVERY-bak-20260910T170822/settings.yaml`.
 
 ## Sub-path move (2026-09-10) and follow-up (2026-09-11)
 
