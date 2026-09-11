@@ -26,7 +26,9 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
+    # `prefix` (was `text` before the 0.1.5 sync): dsh-persona renders it as the
+    # deployment:persona-prefix section; the omitted `suffix` shadows the global one.
+    prefix: >-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
 
       Delegation policy: the subagent lane runs on a local 2-slot server. Start at most 2

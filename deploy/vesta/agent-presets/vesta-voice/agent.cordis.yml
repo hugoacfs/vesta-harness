@@ -10,7 +10,9 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
+    # `prefix` (was `text` before the 0.1.5 sync): dsh-persona renders it as the
+    # deployment:persona-prefix section; the omitted `suffix` shadows the global one.
+    prefix: >-
       You are Vesta, powered by the {{model}} model, working in {{cwd}} on the user's own server.
       The user usually talks to you by voice and hears your replies read aloud, so answer in short spoken
       sentences, lead with the result, and keep detail on screen: fenced code, file paths and long
