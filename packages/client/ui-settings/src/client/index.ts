@@ -55,7 +55,12 @@ export function apply(ctx: Context): void {
   const schema = new SettingsSchemaService(ctx)
   // Resolved once here, where `remote` is declared in this plugin's own
   // `inject`; the binder hands the same answer to every scope it binds.
-  const persistence = ctx.remote.$host.isLoopback ? 'host' : 'memory'
+  // Vesta fork (VESTA.md → fork patches): a single-user tailnet deployment opts its
+  // remote browsers into host persistence at build time (DSH_CLIENT_SETTINGS_PERSISTENCE=host,
+  // set by deploy/vesta/bin/vesta-build); unset keeps upstream's process-local rule.
+  const persistence = ctx.remote.$host.isLoopback || process.env.DSH_CLIENT_SETTINGS_PERSISTENCE === 'host'
+    ? 'host'
+    : 'memory'
   const mirror = new SettingsDescribeMirror(ctx, persistence)
   ctx.effect(() => {
     const disposers = [

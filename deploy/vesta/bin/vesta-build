@@ -10,7 +10,10 @@
 #   vesta-build --no-install
 set -eu
 export DSH_CLIENT_TITLE="${DSH_CLIENT_TITLE:-vesta harness}"
+# Remote (tailnet) browsers persist settings on the Host instead of process-local memory:
+# this is what makes the one-time welcome notice stay acknowledged (see VESTA.md fork patches).
+export DSH_CLIENT_SETTINGS_PERSISTENCE="${DSH_CLIENT_SETTINGS_PERSISTENCE:-host}"
 export PATH="$HOME/.local/bin:$HOME/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin:$PATH"
 [ "${1:-}" = "--no-install" ] || pnpm install --frozen-lockfile
 pnpm run build
-echo "vesta-build: built $(git rev-parse --short HEAD 2>/dev/null || echo '?') with DSH_CLIENT_TITLE=\"$DSH_CLIENT_TITLE\""
+echo "vesta-build: built $(git rev-parse --short HEAD 2>/dev/null || echo '?') with DSH_CLIENT_TITLE=\"$DSH_CLIENT_TITLE\" DSH_CLIENT_SETTINGS_PERSISTENCE=$DSH_CLIENT_SETTINGS_PERSISTENCE"
