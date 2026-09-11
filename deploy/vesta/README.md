@@ -199,6 +199,10 @@ End to end: with every harness tab closed for 90 s, prompt a session over RPC to
 
 Upstream keeps every settings scope process-local for a browser whose hostname is not loopback, so from the tailnet the Settings page never persisted and the “Internal Testing Notice” reappeared on every load. The fork's `ui-settings` honours `DSH_CLIENT_SETTINGS_PERSISTENCE=host` at build time (`vesta-build` sets it; `VESTA.md` fork-patch table): settings written from the tailnet land in `$DSH_HOME/settings.yaml`, and the acknowledgement already stored there (`ui-onboarding.welcomeNoticeVersion`) keeps the notice away. Verify: a fresh browser profile opens the `vesta-url` link and lands on the app with no dialog. If upstream bumps the notice version, acknowledge it once from any browser; it persists.
 
+## Phones and home-screen install
+
+Since 2026-09-11 the call bar wraps onto two rows below 480 px (device name and mic meter hidden, errors still shown), and the app installs as a PWA under the sub-path: the manifest's `start_url`/`scope`/`id` are `./` (resolved against `/harness/manifest.webmanifest`), display `standalone`, ember colours, SVG + PNG icons (`apple-touch-icon.png` 180 px, `icon-512.png` 512 px maskable, rendered from `favicon.svg`; regenerate with a 512 px screenshot of the SVG on `#07080c` if the emblem changes). `index.html` carries `theme-color` and the iOS `apple-mobile-web-app-*` tags. Verify: `curl -b <jar> https://vesta.tail22b555.ts.net/harness/manifest.webmanifest` shows `./` fields and three icons; the PNGs answer `image/png`. On the phone: open the `vesta-url` link once in the browser (the cookie persists), then “Add to Home Screen”; the installed app must open the harness, not the landing page, and the mic button must prompt for the microphone.
+
 ## CLI smoke check (no browser)
 
 `profiles/vesta-headless` stacks the same layers without the web server, so a one-shot run proves the model route, credentials, preset, and MCP tools from a shell:
