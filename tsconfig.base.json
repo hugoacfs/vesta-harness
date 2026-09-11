@@ -449,6 +449,7 @@
       "@deepseek-ai/dsh-user-approval/invariant": ["./packages/interaction/user-approval/src/invariant.ts"],
       "@deepseek-ai/dsh-user-questions": ["./packages/interaction/user-questions/src"],
       "@deepseek-ai/dsh-vesta-app": ["./packages/bundle/vesta-app/src"],
+      "@deepseek-ai/dsh-vesta-modes": ["./packages/vesta/vesta-modes/src"],
       "@deepseek-ai/dsh-vesta-notify": ["./packages/vesta/vesta-notify/src"],
       "@deepseek-ai/dsh-vesta-sessions": ["./packages/vesta/vesta-sessions/src"],
       "@deepseek-ai/dsh-vesta-voice": ["./packages/vesta/vesta-voice/src"],

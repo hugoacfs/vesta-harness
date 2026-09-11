@@ -218,6 +218,21 @@ curl -s -b <jar> https://vesta.tail22b555.ts.net/harness/api/vesta/sessions/arch
 curl -s -o /dev/null -w '%{http_code}\n' -b <jar> -H 'content-type: application/json' -X POST https://vesta.tail22b555.ts.net/harness/api/vesta/sessions/delete -d '{"sessionId":"session-00000000-0000-0000-0000-000000000000"}'   # 404
 ```
 
+## Modes (roadmap M1–M2, 2026-09-11)
+
+A mode is an agent preset plus what the harness applies when a session starts with it. The presets live in `deploy/vesta/agent-presets/<mode>/` (copied to `$DSH_HOME/.agent-presets/`, like the older three); the host plugin `vesta-modes` (`packages/vesta/vesta-modes`, configured in the `vesta-app` bundle patch) sets the permission tier and the reasoning level once, on a root session that has not produced a turn yet, so a change made by hand or by voice later is never undone by a resume. The New Session chip (upstream's preset selector, on by default) lists the modes; upstream's demo presets are hidden (`agent-presets.includeShippedRoot: false`). The deployment default is `vesta-ops` (`agent-presets.default` in `settings.yaml`).
+
+| Mode (preset) | Built from | Persona | Tier / reasoning today | Later |
+|---|---|---|---|---|
+| Ops (`vesta-ops`) | `vesta-default` | operator: look before acting, background jobs, running summary | full access / xhigh | — |
+| Build (`vesta-build`) | `vesta-orch` | engineer: read before edit, tests, plan mode, ≤ 2 subagents | full access / xhigh | workspace-write once a sandbox runner exists |
+| Research (`vesta-research`) | `vesta-default` minus plan mode and goals | find out, do not guess; sources; PDF and vision tools | full access / xhigh | read-only once a sandbox runner exists |
+| Companion (`vesta-companion`) | `vesta-voice` | warm and brief; memory MCP; knows the time; reminders | full access / **off** | read-only |
+
+`vesta-default`, `vesta-orch` and `vesta-voice` stay in the roster so existing sessions resume; new sessions should use the modes. The Qwen lane declares only `off` and `xhigh`, so there is no medium level. A preset can be switched only while the session is blank (upstream rule); a session that has produced anything keeps its tools, and a soft switch (persona, tier, reasoning) is roadmap M3.
+
+Verify a mode without a browser: create a session with `agentPreset: vesta-companion`, prompt once, and read its log — a `permission/preset` event with the configured tier, a `model/selection` event, and `request/header.config.reasoningEffort: off`. A `preset.yml` description containing a colon must be quoted, or the picker shows the id and "No description".
+
 ## Quick mounts (roadmap T1–T6, 2026-09-11)
 
 Six upstream capabilities the composition did not mount, added as rows only (no fork code). Every upstream package a row names must also be a dependency of `packages/bundle/vesta-app/package.json` (then `pnpm install`): the profile directory resolves packages through the bundle's dependency graph, and a row naming a package outside it fails the boot with `Cannot find package`. A patch row can restate a row's `config` or set `disabled`, but it cannot swap the row's package.

@@ -51,7 +51,7 @@ agent-default-model:
   model: default
   reasoningEffort: xhigh
 agent-presets:
-  default: vesta-default
+  default: vesta-ops
 llm-deepseek:
   models: []
 permission:

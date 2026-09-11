@@ -1790,6 +1790,9 @@ importers:
       '@deepseek-ai/dsh-tool-session-query':
         specifier: workspace:^
         version: link:../../session-query/tool-session-query
+      '@deepseek-ai/dsh-vesta-modes':
+        specifier: workspace:^
+        version: link:../../vesta/vesta-modes
       '@deepseek-ai/dsh-vesta-notify':
         specifier: workspace:^
         version: link:../../vesta/vesta-notify
@@ -10646,6 +10649,28 @@ importers:
         version: link:../../../vendor/cordis
 
   packages/util/workspace-path:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
+  packages/vesta/vesta-modes:
+    dependencies:
+      '@deepseek-ai/dsh-agent-default-model':
+        specifier: workspace:^
+        version: link:../../core/agent-default-model
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: workspace:^
+        version: link:../../api/session-controller
+      '@deepseek-ai/dsh-permission-presets':
+        specifier: workspace:^
+        version: link:../../interaction/permission-presets
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

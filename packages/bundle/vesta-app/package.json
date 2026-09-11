@@ -38,6 +38,7 @@
     "@deepseek-ai/dsh-session-title-all-prompts-llm": "workspace:^",
     "@deepseek-ai/dsh-time-context": "workspace:^",
     "@deepseek-ai/dsh-tool-session-query": "workspace:^",
+    "@deepseek-ai/dsh-vesta-modes": "workspace:^",
     "@deepseek-ai/dsh-vesta-notify": "workspace:^",
     "@deepseek-ai/dsh-vesta-sessions": "workspace:^",
     "@deepseek-ai/dsh-vesta-voice": "workspace:^"

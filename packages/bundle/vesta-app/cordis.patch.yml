@@ -83,6 +83,21 @@
     - id: schedule
       name: '@deepseek-ai/dsh-schedule'
 
+    # ── modes (roadmap stream M, 2026-09-11) ────────────────────────────────
+    # A mode = a preset (deploy/vesta/agent-presets/<mode>) + what the harness
+    # applies at session start: permission tier and reasoning level. Presets not
+    # listed keep the deployment defaults. The Qwen lane declares only `off` and
+    # `xhigh`. Tiers other than full access wait for a sandbox runner on the box
+    # (bubblewrap): then Build → workspace-write, Research/Companion → read-only.
+    - id: vesta-modes
+      name: '@deepseek-ai/dsh-vesta-modes'
+      config:
+        modes:
+          vesta-ops: { permission: danger-full-access, reasoning: xhigh }
+          vesta-build: { permission: danger-full-access, reasoning: xhigh }
+          vesta-research: { permission: danger-full-access, reasoning: xhigh }
+          vesta-companion: { permission: danger-full-access, reasoning: 'off' }
+
     # ── host: vesta MCP servers ─────────────────────────────────────────────
     - id: mcp-vesta-memory
       name: '@deepseek-ai/dsh-mcp-client'
@@ -121,3 +136,12 @@
         maxInputBytes: 16384
         maxOutputTokens: 64
         timeoutMs: 60000
+
+# ── modes picker (roadmap M2, 2026-09-11) ────────────────────────────────────
+# Only the Vesta presets in the New Session chip: upstream's demo roster
+# (Standard, PTC, Minimal, Creator) is hidden. `default` here is the deployment
+# fallback; $DSH_HOME/settings.yaml `agent-presets.default` overrides it.
+- id: agent-presets
+  config:
+    default: vesta-ops
+    includeShippedRoot: false
