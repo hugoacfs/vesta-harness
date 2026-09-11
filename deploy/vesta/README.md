@@ -218,6 +218,15 @@ curl -s -b <jar> https://vesta.tail22b555.ts.net/harness/api/vesta/sessions/arch
 curl -s -o /dev/null -w '%{http_code}\n' -b <jar> -H 'content-type: application/json' -X POST https://vesta.tail22b555.ts.net/harness/api/vesta/sessions/delete -d '{"sessionId":"session-00000000-0000-0000-0000-000000000000"}'   # 404
 ```
 
+## Image reading (CPU vision MCP)
+
+The Qwen lane is text-only, so the composer refuses image attachments and upstream's `read_image` tool refuses as well (`does not support image input`). Since 2026-09-11 (feature plan P5) the harness mounts a CPU vision server instead: `mcp__vision__read_image(path, question?)` from `/srv/ai/compose/vision-mcp` — Ollama `qwen2.5vl:3b` pinned to the CPU on loopback `:11434` and a read-only FastMCP container on loopback `:7338`; no GPU is touched. The row lives in the machine-wide home patch (`deploy/vesta/home-cordis.patch.yml` → `$DSH_HOME/cordis.patch.yml` in both homes; a new row needs a harness restart) and the three presets' persona text points the model at it. Put images under `~/workspace` (say `~/workspace/inbox/`), `~/code`, either home's `attachments/`, or `/srv/ai/pdf-mcp/work` — the container mounts those read-only at the same paths — then ask, for example, "read /home/hugo/workspace/inbox/shot.png and tell me what error it shows". Expect 20–60 s with a warm model (59 s for the first call after the container starts) and 2–5 s when the same image is asked about again. Knobs, model swap and rollback: `~/vesta-docs/services/vision-mcp.md`.
+
+```bash
+curl -s -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' http://127.0.0.1:7338/mcp -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | head -c 200   # read_image
+docker logs --since 1h ai-vision-mcp | grep read_image      # one line per call: path, sizes, seconds, chars
+```
+
 ## Settings from a tailnet browser, and the welcome notice
 
 Upstream keeps every settings scope process-local for a browser whose hostname is not loopback, so from the tailnet the Settings page never persisted and the “Internal Testing Notice” reappeared on every load. The fork's `ui-settings` honours `DSH_CLIENT_SETTINGS_PERSISTENCE=host` at build time (`vesta-build` sets it; `VESTA.md` fork-patch table): settings written from the tailnet land in `$DSH_HOME/settings.yaml`, and the acknowledgement already stored there (`ui-onboarding.welcomeNoticeVersion`) keeps the notice away. Verify: a fresh browser profile opens the `vesta-url` link and lands on the app with no dialog. If upstream bumps the notice version, acknowledge it once from any browser; it persists.

@@ -41,6 +41,10 @@
       what you tried — never fake success. For anything you need from the web, use the
       search MCP tools (mcp__search__*).
 
+      To read an image file (a screenshot, photo or diagram), call mcp__vision__read_image with the
+      file's absolute path and, when useful, a question; it runs a local vision model on the CPU
+      and takes 20–120 s. The built-in read_image tool does not work with this model.
+
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:

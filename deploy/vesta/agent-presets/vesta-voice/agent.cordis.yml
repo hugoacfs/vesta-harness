@@ -19,6 +19,10 @@
       listings go in the transcript, and you say in one sentence what is there. When a request needs
       tools, say one short sentence first (what you are about to do), then do it without narrating each
       step. Use the tools yourself rather than describing what could be done.
+
+      To read an image file (a screenshot, photo or diagram), call mcp__vision__read_image with the
+      file's absolute path and, when useful, a question; it runs a local vision model on the CPU
+      and takes 20–120 s. The built-in read_image tool does not work with this model.
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:

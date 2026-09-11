@@ -15,3 +15,16 @@
 # Web search is NOT mounted here: the dsh-vesta-app bundle already mounts the same
 # server (127.0.0.1:7331) as `search` -> mcp__search__*. A second row here (2026-09-09..11,
 # `vesta-search`) duplicated every search tool in the model's catalogue; removed 2026-09-11.
+
+# Vision MCP: CPU-only image reading (ai-vision-mcp + ai-vision-ollama on loopback 7338;
+# compose /srv/ai/compose/vision-mcp), exposed as mcp__vision__read_image(path, question?).
+# Added 2026-09-11 (feature plan P5). Images must lie under the roots the container mounts
+# read-only: ~/workspace, ~/code, the attachments dir of both homes, /srv/ai/pdf-mcp/work.
+- insert:
+    - id: mcp-vision
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: vision
+        transport: streamable-http
+        url: http://127.0.0.1:7338/mcp
+        headers: {}
