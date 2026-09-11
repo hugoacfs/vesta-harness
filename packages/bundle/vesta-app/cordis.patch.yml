@@ -87,7 +87,7 @@
     - id: schedule
       name: '@deepseek-ai/dsh-schedule'
 
-    # ── modes (roadmap stream M, 2026-09-11) ────────────────────────────────
+    # ── modes (roadmap stream M, 2026-09-11; /mode soft switch 2026-09-12) ─
     # A mode = a preset (deploy/vesta/agent-presets/<mode>) + what the harness
     # applies at session start: permission tier and reasoning level. Presets not
     # listed keep the deployment defaults. The Qwen lane declares only `off` and
@@ -98,11 +98,11 @@
       name: '@deepseek-ai/dsh-vesta-modes'
       config:
         modes:
-          vesta-ops: { permission: danger-full-access, reasoning: xhigh }
-          vesta-build: { permission: workspace-write, reasoning: xhigh }
-          vesta-research: { permission: read-only, reasoning: xhigh }
-          vesta-companion: { permission: read-only, reasoning: 'off' }
-          vesta-incognito: { permission: read-only, reasoning: 'off' }
+          vesta-ops: { label: Ops, permission: danger-full-access, reasoning: xhigh }
+          vesta-build: { label: Build, permission: workspace-write, reasoning: xhigh }
+          vesta-research: { label: Research, permission: read-only, reasoning: xhigh }
+          vesta-companion: { label: Companion, permission: read-only, reasoning: 'off' }
+          vesta-incognito: { label: Incognito, permission: read-only, reasoning: 'off', switchable: false }
 
     # ── incognito (roadmap M4, 2026-09-11) ─────────────────────────────────
     # Sessions on the vesta-incognito preset: memory writes refused, title pinned,
