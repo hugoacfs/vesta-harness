@@ -77,6 +77,10 @@ Standing constraints: voice models run on the RTX 3060 only (`GPU-4c4e6e17-…`)
 
 rc.7: `systemctl --user enable --now dsh-web && tailscale serve --bg --https=8790 http://127.0.0.1:3080` (the new harness stays up on `:3081`). Standalone voice UI: `docker compose --profile legacy up -d livekit-webui` + `tailscale serve --bg --https=8480 http://127.0.0.1:3010`. The agent bridge is env-flagged (`DSH_BRIDGE_URL`). Nothing is deleted; `~/.dsh` is never written.
 
+## Roadmap (2026-09-11)
+
+The standing direction lives in the server docs: `~/vesta-docs/roadmap.md` (https://vesta.tail22b555.ts.net/docs/#/roadmap). Streams: **M** modes (Ops, Build, Research, Companion, Incognito, Auto; picker on New Session, soft switch mid-session), **T** tooling (quick upstream mounts → Home Assistant and PDF wiring → programmatic tool calling, skills, automatic memory), **R** routines (scheduled agent jobs over `dsh-webhook`, panel plus file, per-routine permission), **V** voice interface (a linked project; `voice-roadmap.md`). Order: quick mounts → modes → routines → big bets. When an item is picked up it gets a phase entry in this file and its status line in the roadmap is updated on completion. Phases P0–P5 below are complete.
+
 ## Plan 2026-09-11 — feature phases (from the interview)
 
 Status: approved 2026-09-11, work started the same day; each phase ends with a documentation break (this file, the runbook, `~/vesta-docs`). Baseline: tag `vesta-stable-2026-09-11` (production and staging on `10251477ea`).
