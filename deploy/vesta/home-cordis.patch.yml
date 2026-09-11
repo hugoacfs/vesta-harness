@@ -1,0 +1,17 @@
+# Vesta user patch layer (machine-wide — applies to every profile).
+# Host-plane MCP mounts, available to all presets/sessions.
+
+# Telegram Notify MCP: send-only notifier (ai-telegram-mcp, loopback 7335),
+# exposed as mcp__telegram-notify__notify. Added 2026-09-09.
+- insert:
+    - id: notify-telegram
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: telegram-notify
+        transport: streamable-http
+        url: http://127.0.0.1:7335/mcp
+        headers: {}
+
+# Web search is NOT mounted here: the dsh-vesta-app bundle already mounts the same
+# server (127.0.0.1:7331) as `search` -> mcp__search__*. A second row here (2026-09-09..11,
+# `vesta-search`) duplicated every search tool in the model's catalogue; removed 2026-09-11.

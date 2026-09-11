@@ -5,18 +5,30 @@
 # once exchanges the token for a signed browser cookie (bound to the request
 # host) that survives service restarts. Run this after a restart when a new
 # browser or device needs to get in. Install: ~/.local/bin/vesta-url
+#
+# Since 2026-09-10 both harnesses are served under sub-paths of the shared 443
+# host (nginx strips the prefix; DSH_BASE_PATH makes the app emit it):
+#   vesta-url                                    # production -> https://vesta.tail22b555.ts.net/harness/?token=...
+#   VESTA_UNIT=vesta-harness-staging vesta-url   # staging    -> .../harness-staging/?token=...
+# VESTA_BASE overrides the base URL (e.g. a dedicated-port rollback:
+#   VESTA_BASE=https://vesta.tail22b555.ts.net:8790 vesta-url).
 set -eu
-# VESTA_UNIT=vesta-harness-staging VESTA_PORT=8792 vesta-url   # the staging instance
 unit=${VESTA_UNIT:-vesta-harness}
-port=${VESTA_PORT:-8790}
+case "$unit" in
+  vesta-harness)         default_base=https://vesta.tail22b555.ts.net/harness ;;
+  vesta-harness-staging) default_base=https://vesta.tail22b555.ts.net/harness-staging ;;
+  *)                     default_base=https://vesta.tail22b555.ts.net ;;
+esac
+base=${VESTA_BASE:-$default_base}
+base=${base%/}
 pid=$(systemctl --user show -p MainPID --value "$unit")
 if [ -z "$pid" ] || [ "$pid" = "0" ]; then
   echo "vesta-url: $unit is not running (systemctl --user status $unit)" >&2
   exit 1
 fi
-tok=$(journalctl --user _PID="$pid" -o cat --no-pager 2>/dev/null | grep -oE 'token=[A-Za-z0-9_-]+' | tail -1 | cut -d= -f2)
+tok=$(journalctl --user _PID="$pid" -o cat --no-pager 2>/dev/null | grep -oE 'token=[^[:space:]&"]+' | tail -1 | cut -d= -f2-)
 if [ -z "$tok" ]; then
   echo "vesta-url: no startup URL in the journal for pid $pid yet; retry in a few seconds" >&2
   exit 1
 fi
-echo "https://vesta.tail22b555.ts.net:$port/?token=$tok"
+echo "$base/?token=$tok"

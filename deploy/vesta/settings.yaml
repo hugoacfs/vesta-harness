@@ -53,7 +53,7 @@ agent-default-model:
   provider: vesta
   model: default
 agent-presets:
-  default: vesta-orch
+  default: vesta-default
 llm-deepseek:
   models: []
 permission:

@@ -1,14 +1,14 @@
 # User preset `vesta-default`: the lean, single-agent default. Derived from
 # `vesta-orch` (a copy of shipped `standard`) with the delegation/workflow rows
 # and the DeepSeek `web` search tool REMOVED, and the persona rewritten so the
-# agent does the work directly and searches via the vesta-search MCP.
+# agent does the work directly and searches via the on-box search MCP.
 #
 # Rationale: on one RTX 3090 (the vesta `default` lane, Qwen 27B) subagent
 # fan-out shares the SAME card — it buys context isolation, not parallel
 # speedup — so the sensible default is one capable agent. Orchestration stays
 # available by switching the session to the `vesta-orch` preset. External web
-# search is served by the vesta-search MCP (mounted host-plane in
-# $DSH_HOME/cordis.patch.yml as `mcp__vesta-search__*`), not DeepSeek `web_search`.
+# search is served by the on-box search MCP (SearXNG + crawl4ai; mounted by the
+# dsh-vesta-app bundle as `mcp__search__*`), not DeepSeek `web_search`.
 #
 # The agent model is set in $DSH_HOME/settings.yaml (agent-default-model:
 # vesta/default).
@@ -24,7 +24,7 @@
 # The preset's own persona, shadowing the deployment default for this agent.
 # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
 # Single-agent: no delegation guidance; folds in the worker discipline that
-# proved effective, and points web lookups at the vesta-search MCP.
+# proved effective, and points web lookups at the on-box search MCP.
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
@@ -37,7 +37,7 @@
       switch to a different tool or a different approach — never repeat an action already done.
       Complete every part of the task before reporting; if you cannot, say FAILED plainly with
       what you tried — never fake success. For anything you need from the web, use the
-      vesta-search tools.
+      search MCP tools (mcp__search__*).
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -173,6 +173,6 @@
 # ── web search ───────────────────────────────────────────────────────────────
 #
 # DeepSeek `tool-web` (web_search / web_fetch) REMOVED for vesta-default. The
-# only search path is the vesta-search MCP (SearXNG + crawl4ai over VPN egress),
+# only search path is the on-box search MCP (SearXNG + crawl4ai over VPN egress),
 # mounted host-plane in $DSH_HOME/cordis.patch.yml and exposed as
-# `mcp__vesta-search__*`. Re-add `@deepseek-ai/dsh-tool-web` here to restore it.
+# `mcp__search__*`. Re-add `@deepseek-ai/dsh-tool-web` here to restore it.
