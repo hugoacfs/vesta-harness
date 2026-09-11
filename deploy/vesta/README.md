@@ -195,6 +195,29 @@ docker logs --since 10m ai-telegram-mcp | grep -c CallToolRequest      # one lin
 
 End to end: with every harness tab closed for 90 s, prompt a session over RPC to run `sleep 130` through the shell tool; one message arrives when the turn ends (2026-09-11: 138 s after the prompt on production, 34 s on staging with the short thresholds). Plugin log lines never reach the journal; the MCP container's log is the evidence. A visible tab keeps the notifier quiet by design.
 
+## Sessions: archive, restore, delete, export
+
+Upstream archives a session from its row menu (a registry-global hidden set) and offers nothing after that. Since 2026-09-11 (feature plan P4) the sidebar's global panel list has an **Archived** entry (host `vesta-sessions`, browser `ui-vesta-sessions`, both mounted by the `vesta-app` bundle) whose panel lists every archived session — title, age, workspace — with three actions per row:
+
+| Action | What happens |
+|---|---|
+| Restore | `POST /api/vesta/sessions/unarchive {sessionId}` → the fork's `WorkspaceRegistry.unarchiveSession`; the session returns to its old place in the sidebar at once (the workspace feed publishes the change to every tab) |
+| Download log | upstream's `GET /api/session.export?sessionId=…` (a ZIP of the log); nothing changes on the server |
+| Delete for good… | an inline confirm, then `POST /api/vesta/sessions/delete {sessionId}`: refused with 409 while the session is open anywhere (close its tab; a session only goes cold when nothing has it attached — after a restart at the latest), otherwise the session directory is tarred to `exportDir` as `<sessionId>-<timestamp>.tar.gz`, removed, forgotten in the registry (archive set, workspace accounting, header index) and every browser drops the row (`api-session/removed`) |
+
+`exportDir` defaults to `~/backups/sessions-deleted` (bundle row); staging writes to `~/backups/sessions-deleted-staging` (`staging-cordis.patch.yml`). The tarball is the raw directory (`session.v3.jsonl.zstd`, `session.lock`, attachments when present). To bring a deleted session back, unpack it into the workspace directory it came from — the sanitised cwd, e.g. `--home-hugo-workspace-dsh-chat--`:
+
+```bash
+tar xzf ~/backups/sessions-deleted/<id>-<stamp>.tar.gz -C ~/.vesta-harness/sessions/<workspace-dir>/
+```
+
+The listing reads the directories on every request, so the session is back in `session/list` without a restart; it shows under *Ungrouped* until you move it into a workspace (its accounting was removed with it). The projection cache keeps a derived row for a deleted session; that is harmless and rebuildable. Only the panel deletes: there is no bulk delete and no delete entry in the session row menu. Without a browser (ids are `session-<uuid>`):
+
+```bash
+curl -s -b <jar> https://vesta.tail22b555.ts.net/harness/api/vesta/sessions/archived | head -c 300      # {"items":[{"sessionId":…,"title":…,"updatedAt":…,"cwd":…}]}
+curl -s -o /dev/null -w '%{http_code}\n' -b <jar> -H 'content-type: application/json' -X POST https://vesta.tail22b555.ts.net/harness/api/vesta/sessions/delete -d '{"sessionId":"session-00000000-0000-0000-0000-000000000000"}'   # 404
+```
+
 ## Settings from a tailnet browser, and the welcome notice
 
 Upstream keeps every settings scope process-local for a browser whose hostname is not loopback, so from the tailnet the Settings page never persisted and the “Internal Testing Notice” reappeared on every load. The fork's `ui-settings` honours `DSH_CLIENT_SETTINGS_PERSISTENCE=host` at build time (`vesta-build` sets it; `VESTA.md` fork-patch table): settings written from the tailnet land in `$DSH_HOME/settings.yaml`, and the acknowledgement already stored there (`ui-onboarding.welcomeNoticeVersion`) keeps the notice away. Verify: a fresh browser profile opens the `vesta-url` link and lands on the app with no dialog. If upstream bumps the notice version, acknowledge it once from any browser; it persists.
