@@ -75,6 +75,12 @@
   config:
     sampleOverCapGlobResults: false
 
+# Search its own earlier sessions (roadmap T2, 2026-09-11): five read-only tools over
+# ctx.sessionQuery (search, matches, trace, event read); cross-session reads only within
+# the same cwd, so Ops history is reachable from Ops sessions.
+- id: tool-session-query
+  name: '@deepseek-ai/dsh-tool-session-query'
+
 # `present` (upstream 0.1.5): the model hands finished files to the user as download
 # cards ("immutable file deliveries"). Bare tool row, no realm. Added 2026-09-11 with the
 # upstream sync; upstream's `standard` preset carries the same row after `tool-web`.

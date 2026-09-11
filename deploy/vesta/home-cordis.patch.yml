@@ -28,3 +28,25 @@
         transport: streamable-http
         url: http://127.0.0.1:7338/mcp
         headers: {}
+
+# PDF MCP (roadmap T5, 2026-09-11): the standalone pdf-manipulation server (ai-pdf-mcp,
+# loopback 7333, /srv/ai/pdf-mcp/work is its only visible path) → mcp__pdf__*.
+- insert:
+    - id: mcp-pdf
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pdf
+        transport: streamable-http
+        url: http://127.0.0.1:7333/mcp
+        headers: {}
+
+# Shell guard (roadmap T4, 2026-09-11): Claude Code style hooks from $DSH_HOME/hooks.json;
+# today one PreToolUse hook on `bash` (hooks/guard-shell.py) denies commands that would
+# wreck the box (rm -rf / or ~, mkfs, dd onto a disk, reboot, fork bomb, force-push, …).
+# Template: deploy/vesta/hooks. Extend DENY in the script; `echo vesta-guard-canary` is the self-test.
+- insert:
+    - id: hooks-claude-code
+      name: '@deepseek-ai/dsh-hooks-claude-code'
+      config:
+        configPath: /home/hugo/.vesta-harness/hooks.json
+        projectDir: /home/hugo

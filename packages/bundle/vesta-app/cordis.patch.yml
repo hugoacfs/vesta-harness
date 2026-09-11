@@ -72,6 +72,17 @@
       config:
         exportDir: ~/backups/sessions-deleted
 
+    # ── roadmap T1/T6 (2026-09-11): a clock for the model, reminders in the conversation ─
+    # time-context appends a durable reading (time, browser zone, elapsed) at most every
+    # 5 min; schedule adds schedule_create/list/delete (delivery needs the session open).
+    - id: time-context
+      name: '@deepseek-ai/dsh-time-context'
+      config:
+        refreshIntervalMs: 300000
+
+    - id: schedule
+      name: '@deepseek-ai/dsh-schedule'
+
     # ── host: vesta MCP servers ─────────────────────────────────────────────
     - id: mcp-vesta-memory
       name: '@deepseek-ai/dsh-mcp-client'
@@ -86,3 +97,27 @@
         serverName: search
         transport: streamable-http
         url: http://127.0.0.1:7331/mcp
+
+# The Schedule overlay (upstream apps/cli/config/examples/schedule) also turns the
+# shipped client row on; the sidebar then shows active reminders.
+- id: ui-schedule
+  disabled: false
+
+# ── roadmap T3 (2026-09-11): titles that follow the whole conversation ──────
+# The title service takes one LLM provider and a patch cannot swap a row's
+# package (only its config), so dsh-base's first-prompt row is disabled and the
+# all-prompts provider inserted: a new revision after every user prompt, folded
+# over all of them (kept below maxInputBytes, else the prior title stays). Same
+# route as the main request.
+- id: session-title-llm
+  disabled: true
+
+- insert:
+    - id: session-title-all-prompts
+      name: '@deepseek-ai/dsh-session-title-all-prompts-llm'
+      config:
+        targetWords: 5
+        targetCjkCharacters: 10
+        maxInputBytes: 16384
+        maxOutputTokens: 64
+        timeoutMs: 60000

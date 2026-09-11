@@ -1772,9 +1772,24 @@ importers:
       '@deepseek-ai/dsh-client-ui-vesta-voice':
         specifier: workspace:^
         version: link:../../client/ui-vesta-voice
+      '@deepseek-ai/dsh-hooks-claude-code':
+        specifier: workspace:^
+        version: link:../../hooks/hooks-claude-code
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:^
         version: link:../../mcp/mcp-client
+      '@deepseek-ai/dsh-schedule':
+        specifier: workspace:^
+        version: link:../../schedule/schedule
+      '@deepseek-ai/dsh-session-title-all-prompts-llm':
+        specifier: workspace:^
+        version: link:../../session/session-title-all-prompts-llm
+      '@deepseek-ai/dsh-time-context':
+        specifier: workspace:^
+        version: link:../../context/time-context
+      '@deepseek-ai/dsh-tool-session-query':
+        specifier: workspace:^
+        version: link:../../session-query/tool-session-query
       '@deepseek-ai/dsh-vesta-notify':
         specifier: workspace:^
         version: link:../../vesta/vesta-notify
