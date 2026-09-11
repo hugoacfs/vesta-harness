@@ -28,7 +28,7 @@ sudo apt-get install -y musl-tools
 
 ```bash
 cd ~/code/vesta-harness
-pnpm --filter @deepseek-ai/node-addon-landlock-run-workspace run build:native   # sandbox binary (needs musl-tools)
+(cd native/system && pnpm build:native)   # Landlock sandbox launcher → native/system/packages/linux-x64/bin/landlock-run (needs musl-tools; built 2026-09-12)
 deploy/vesta/bin/vesta-build   # = pnpm install --frozen-lockfile && pnpm run build, with DSH_CLIENT_TITLE="vesta harness" (the tab title since 0.1.5)
 ```
 
@@ -237,11 +237,12 @@ A mode is an agent preset plus what the harness applies when a session starts wi
 | Mode (preset) | Built from | Persona | Tier / reasoning today | Later |
 |---|---|---|---|---|
 | Ops (`vesta-ops`) | `vesta-default` | operator: look before acting, background jobs, running summary | full access / xhigh | — |
-| Build (`vesta-build`) | `vesta-orch` | engineer: read before edit, tests, plan mode, ≤ 2 subagents | full access / xhigh | workspace-write once a sandbox runner exists |
-| Research (`vesta-research`) | `vesta-default` minus plan mode and goals | find out, do not guess; sources; PDF and vision tools | full access / xhigh | read-only once a sandbox runner exists |
-| Companion (`vesta-companion`) | `vesta-voice` | warm and brief; memory MCP; knows the time; reminders | full access / **off** | read-only |
+| Build (`vesta-build`) | `vesta-orch` | engineer: read before edit, tests, plan mode, ≤ 2 subagents | **workspace-write** / xhigh (since 2026-09-12) | — |
+| Research (`vesta-research`) | `vesta-default` minus plan mode and goals | find out, do not guess; sources; PDF and vision tools | **read-only** / xhigh | — |
+| Companion (`vesta-companion`) | `vesta-voice` | warm and brief; memory MCP; knows the time; reminders | **read-only** / **off** | — |
+| Incognito (`vesta-incognito`) | `vesta-companion` | nothing kept (see Incognito) | read-only / off | — |
 
-`vesta-default`, `vesta-orch` and `vesta-voice` stay in the roster so existing sessions resume; new sessions should use the modes. The Qwen lane declares only `off` and `xhigh`, so there is no medium level. A preset can be switched only while the session is blank (upstream rule); a session that has produced anything keeps its tools, and a soft switch (persona, tier, reasoning) is roadmap M3.
+`vesta-default`, `vesta-orch` and `vesta-voice` stay in the roster so existing sessions resume; new sessions should use the modes. The Qwen lane declares only `off` and `xhigh`, so there is no medium level. The tiers run under the Landlock launcher (`native/system`, partial enforcement on this kernel's Landlock ABI: writes outside the workspace are refused, `/tmp` stays writable in workspace-write); a Build session wrote and removed a file in its workspace and a Research session's `touch` was refused, with no approval prompt (2026-09-12). A preset can be switched only while the session is blank (upstream rule); a session that has produced anything keeps its tools, and a soft switch (persona, tier, reasoning) is roadmap M3.
 
 Verify a mode without a browser: create a session with `agentPreset: vesta-companion`, prompt once, and read its log — a `permission/preset` event with the configured tier, a `model/selection` event, and `request/header.config.reasoningEffort: off`. A `preset.yml` description containing a colon must be quoted, or the picker shows the id and "No description".
 
@@ -254,7 +255,7 @@ Six upstream capabilities the composition did not mount, added as rows only (no 
 | T1 time awareness | `time-context` (`refreshIntervalMs: 300000`) | bundle patch (host) | a session's first step carries a user-role reading "Time sampled while preparing turn 1 … [Europe/London]"; at most one per 5 min |
 | T2 own-history search | `tool-session-query` | preset row in `vesta-default` and `vesta-orch` (not the voice preset) | `session_search`, `session_event_search`, `session_trace`, `session_event_trace`, `session_event_read` in the request header's tool list; cross-session reads only within the same cwd |
 | T3 whole-conversation titles | `session-title-llm` **disabled** + insert `session-title-all-prompts` (`@deepseek-ai/dsh-session-title-all-prompts-llm`, 16 KB input cap) | bundle patch (host) | `session/title-llm-request` events name `session-title-all-prompts-llm`; the title follows the conversation instead of the first words |
-| T4 shell guard (hooks) | `hooks-claude-code` (`configPath: $DSH_HOME/hooks.json`) | home patch (machine-wide) | `hook/invoked` + `hook/result` events on every `bash` call; `echo vesta-guard-canary` must be denied. **Needs a sandbox runner**: the bridge runs hook commands through the bash executor in `workspace-write`, and without `bubblewrap` (or the Landlock build) the hook cannot run and reports `pass` — install `bubblewrap` (`sudo apt-get install -y bubblewrap`), restart, re-run the canary |
+| T4 shell guard (hooks) | `hooks-claude-code` (`configPath: $DSH_HOME/hooks.json`) | home patch (machine-wide) | `hook/invoked` + `hook/result` events on every `bash` call; `echo vesta-guard-canary` is denied (`decision: block`, exit 2, the reason in the tool result). The bridge runs hook commands through the bash executor in `workspace-write`, so a sandbox runner must exist: the Landlock launcher (see Prerequisites; verified 2026-09-12). `bubblewrap` is installed but blocked by Ubuntu's `apparmor_restrict_unprivileged_userns` |
 | T5 PDF | `mcp-pdf` → `http://127.0.0.1:7333/mcp` (server `pdf`) | home patch | 16 `mcp__pdf__*` tools in the header; files live under `/srv/ai/pdf-mcp/work` (the container's only visible path) |
 | T6 reminders | `schedule` + `ui-schedule` enabled | bundle patch | `schedule_create` / `schedule_list` / `schedule_delete` in the header; delivery only while the session is open (Routines cover the cold case) |
 

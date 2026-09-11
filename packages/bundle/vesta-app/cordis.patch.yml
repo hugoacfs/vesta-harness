@@ -91,17 +91,18 @@
     # A mode = a preset (deploy/vesta/agent-presets/<mode>) + what the harness
     # applies at session start: permission tier and reasoning level. Presets not
     # listed keep the deployment defaults. The Qwen lane declares only `off` and
-    # `xhigh`. Tiers other than full access wait for a sandbox runner on the box
-    # (bubblewrap): then Build → workspace-write, Research/Companion → read-only.
+    # `xhigh`. Tiers below full access need the Landlock launcher
+    # (native/system, `pnpm build:native`; enabled 2026-09-12): Build
+    # workspace-write, Research/Companion/Incognito read-only, Ops full access.
     - id: vesta-modes
       name: '@deepseek-ai/dsh-vesta-modes'
       config:
         modes:
           vesta-ops: { permission: danger-full-access, reasoning: xhigh }
-          vesta-build: { permission: danger-full-access, reasoning: xhigh }
-          vesta-research: { permission: danger-full-access, reasoning: xhigh }
-          vesta-companion: { permission: danger-full-access, reasoning: 'off' }
-          vesta-incognito: { permission: danger-full-access, reasoning: 'off' }
+          vesta-build: { permission: workspace-write, reasoning: xhigh }
+          vesta-research: { permission: read-only, reasoning: xhigh }
+          vesta-companion: { permission: read-only, reasoning: 'off' }
+          vesta-incognito: { permission: read-only, reasoning: 'off' }
 
     # ── incognito (roadmap M4, 2026-09-11) ─────────────────────────────────
     # Sessions on the vesta-incognito preset: memory writes refused, title pinned,
