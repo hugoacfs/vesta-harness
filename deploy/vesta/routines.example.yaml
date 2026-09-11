@@ -1,0 +1,40 @@
+# Vesta routines — copy to $DSH_HOME/routines.yaml (both homes keep their own file).
+# Each entry is a scheduled agent job: at the schedule (five-field cron, server local
+# time) or once at `at`, the harness creates an ordinary session in `workspace` on the
+# `mode` preset, at the routine's own `permission` tier (required, no default), sends
+# `prompt` once, and reports the outcome on Telegram (`notify`: always | failure | never).
+# One routine runs at a time; a run that exceeds `timeoutMinutes` (default 30) is closed
+# and reported as a timeout. The file is re-read whenever it changes; invalid entries are
+# listed in the Routines panel and skipped. State: routines.state.json; history: routines.log.jsonl.
+- name: morning-brief
+  schedule: "0 7 * * 1-5"
+  workspace: /home/hugo/workspace/research
+  mode: vesta-research
+  permission: read-only
+  prompt: |
+    Summarise the overnight news on the topics listed in ~/workspace/research/topics.md
+    in ten lines with sources. If the file does not exist, say so and stop.
+  notify: always
+  timeoutMinutes: 20
+  enabled: false
+
+- name: box-health
+  schedule: "30 6 * * *"
+  workspace: /home/hugo
+  mode: vesta-ops
+  permission: read-only
+  prompt: |
+    Check this server: disk space on / and /srv/ai, docker containers that are not healthy,
+    systemd --user units that failed, and free memory. Report in five lines; flag anything
+    that needs a hand.
+  notify: failure
+  enabled: false
+
+- name: one-off-example
+  at: "2026-12-31T23:00:00"
+  workspace: /home/hugo/workspace/dsh-chat
+  mode: vesta-ops
+  permission: danger-full-access
+  prompt: Say happy new year and stop.
+  notify: never
+  enabled: false

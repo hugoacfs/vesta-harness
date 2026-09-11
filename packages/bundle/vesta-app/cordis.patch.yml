@@ -42,6 +42,10 @@
     - id: ui-vesta-sessions
       name: '@deepseek-ai/dsh-client-ui-vesta-sessions'
 
+    # ── routines: the Routines panel (scheduled agent jobs) ────────────────
+    - id: ui-vesta-routines
+      name: '@deepseek-ai/dsh-client-ui-vesta-routines'
+
     # Host half: room tokens, the agent bridge upgrade route, the spoken-mode
     # prompt section, and the perception-toggle proxy. LiveKit credentials are
     # credential references (LIVEKIT_API_KEY / LIVEKIT_API_SECRET in
@@ -104,6 +108,15 @@
     # notifier quiet (vesta-notify excludePresets), wiped on close/archive/boot.
     - id: vesta-incognito
       name: '@deepseek-ai/dsh-vesta-incognito'
+
+    # ── routines (roadmap R1–R3, 2026-09-11): scheduled agent jobs ─────────
+    # $DSH_HOME/routines.yaml → each due routine becomes an ordinary session in
+    # its workspace on its mode's preset at its own permission tier, one at a
+    # time, reported on Telegram. State and history beside the file.
+    - id: vesta-routines
+      name: '@deepseek-ai/dsh-vesta-routines'
+      config:
+        linkBase: https://vesta.tail22b555.ts.net/harness/
 
     # ── host: vesta MCP servers ─────────────────────────────────────────────
     - id: mcp-vesta-memory

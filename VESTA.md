@@ -21,6 +21,8 @@ Everything Vesta is additive — new packages, one bundle, one profile, and a de
 | `packages/client/ui-vesta-sessions/` | `@deepseek-ai/dsh-client-ui-vesta-sessions` | the **Archived** global panel: Restore / Download log / Delete for good behind an inline confirm |
 | `packages/vesta/vesta-modes/` | `@deepseek-ai/dsh-vesta-modes` | modes: the permission tier and reasoning level a session starts with, keyed on its preset (roadmap stream M) |
 | `packages/vesta/vesta-incognito/` | `@deepseek-ai/dsh-vesta-incognito` | incognito sessions: memory writes refused, title pinned, notifier quiet, wiped on close, archive and boot (roadmap M4) |
+| `packages/vesta/vesta-routines/` | `@deepseek-ai/dsh-vesta-routines` | routines: scheduled agent jobs from `$DSH_HOME/routines.yaml`, each run an ordinary session, reported on Telegram (roadmap R1–R3) |
+| `packages/client/ui-vesta-routines/` | `@deepseek-ai/dsh-client-ui-vesta-routines` | the **Routines** global panel: next and last run, run now, pause, open the last session |
 | `services/livekit-agent/` | — | the LiveKit agent worker (Python): STT/TTS via sidecars, bridge-mode brain = the Harness Session, direct mode = Qwen via LiteLLM |
 | `apps/web/public/vesta/` | — | self-hosted font files (SIL OFL 1.1) |
 | `deploy/vesta/` | — | profile template, settings template, agent presets, systemd unit, runbook |

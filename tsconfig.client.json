@@ -77,6 +77,7 @@
     { "path": "./packages/client/ui-vesta-voice" },
     { "path": "./packages/client/ui-vesta-presence" },
     { "path": "./packages/client/ui-vesta-sessions" },
+    { "path": "./packages/client/ui-vesta-routines" },
     { "path": "./packages/client/ui-approval" },
     { "path": "./packages/client/ui-chat" },
     { "path": "./packages/client/ui-conversation" },

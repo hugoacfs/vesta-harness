@@ -304,6 +304,7 @@
     { "path": "./packages/vesta/vesta-sessions" },
     { "path": "./packages/vesta/vesta-modes" },
     { "path": "./packages/vesta/vesta-incognito" },
+    { "path": "./packages/vesta/vesta-routines" },
     { "path": "./packages/boot/app-boot" },
     { "path": "./packages/boot/cmdline" },
     { "path": "./packages/sdk/server" },
