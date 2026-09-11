@@ -1,6 +1,6 @@
 # Vesta Harness on vesta — ops runbook
 
-Everything here runs as `hugo` on vesta from the source checkout `~/code/vesta-harness` (branch `vesta`), with a **fresh Harness home** `~/.vesta-harness`. Since the cutover (2026-09-05) `https://vesta.tail22b555.ts.net:8790` serves this harness. The old rc.7 install (`~/code/dsh`, `~/.dsh`, unit `dsh-web`) was removed on 2026-09-07 at the user's request — only production (`:8790`) and staging (`:8792`) run now; its code and home are left inert on disk and its sessions are backed up in `~/backups` (see “Cutover … and rc.7 removal” below).
+Everything here runs as `hugo` on vesta from the source checkout `~/code/vesta-harness` (branch `vesta`), with a **fresh Harness home** `~/.vesta-harness`. Since 2026-09-10 the harness is served under a sub-path of the shared tailnet host: **`https://vesta.tail22b555.ts.net/harness/`** (production) and `/harness-staging/` (staging); the dedicated Serve listeners `:8790`/`:8792` used from the 2026-09-05 cutover until then are off (see “Sub-path move” below). The old rc.7 install (`~/code/dsh`, `~/.dsh`, unit `dsh-web`) was removed on 2026-09-07 at the user's request — only production and staging run now; its code and home are left inert on disk and its sessions are backed up in `~/backups` (see “Cutover … and rc.7 removal” below).
 
 ## Server documentation
 
@@ -11,10 +11,10 @@ This runbook covers the harness only. The server it runs on (stacks, ports, GPUs
 | What | Where |
 |---|---|
 | Source checkout | `~/code/vesta-harness` (origin `hugoacfs/vesta-harness`, upstream `deepseek-ai/deepseek-harness`) |
-| Harness home | `~/.vesta-harness` — `profiles/vesta/`, `settings.yaml`, `.credentials.yaml` (chmod 600), `.agent-presets/{vesta-orch,vesta-voice}/` |
-| Service | systemd `--user` unit `vesta-harness` → `node apps/cli/lib/bin.js --profile vesta --host 127.0.0.1 --port 3081 --trusted-host vesta.tail22b555.ts.net --no-open` |
-| Tailnet URL | `https://vesta.tail22b555.ts.net:8790` (tailscale serve → `127.0.0.1:3081`); nginx `/dsh` redirects there. `:8792` → the staging instance (`127.0.0.1:3082`, see below). (`:8791`/rc.7 was removed 2026-09-07.) |
-| Templates | this directory: `profiles/vesta/*`, `settings.yaml`, `agent-presets/{vesta-orch,vesta-voice}/*`, `vesta-harness.service`, `vesta-harness-staging.service`, `staging-cordis.patch.yml`, `fillers.yaml`, `livekit-voice.docker-compose.yml`, `moshi-server.docker-compose.yaml`, `bin/*` |
+| Harness home | `~/.vesta-harness` — `profiles/vesta/`, `settings.yaml`, `.credentials.yaml` (chmod 600), `.agent-presets/{vesta-default,vesta-orch,vesta-voice}/`, `cordis.patch.yml` (machine-wide MCP mounts, see “Home”) |
+| Service | systemd `--user` unit `vesta-harness` → `node apps/cli/lib/bin.js --profile vesta --host 127.0.0.1 --port 3081 --trusted-host vesta.tail22b555.ts.net --no-open`; drop-in `vesta-harness.service.d/basepath.conf` sets `DSH_BASE_PATH=/harness` |
+| Tailnet URL | `https://vesta.tail22b555.ts.net/harness/` — the `:443` Serve listener → `reverse-proxy` nginx (`127.0.0.1:8090`), whose `/harness/` block strips the prefix and proxies to `127.0.0.1:3081` (WebSocket upgrade on, 900 s timeouts); `/dsh` → 302 `/harness/`. `/harness-staging/` → the staging instance (`127.0.0.1:3082`, see below). Reference copy of the blocks: `nginx-harness.conf`. (`:8790`/`:8792` were dedicated Serve listeners until 2026-09-10; `:8791`/rc.7 was removed 2026-09-07.) |
+| Templates | this directory: `profiles/vesta/*`, `settings.yaml`, `home-cordis.patch.yml`, `agent-presets/{vesta-default,vesta-orch,vesta-voice}/*`, `vesta-harness.service` + `vesta-harness.service.d/basepath.conf`, `vesta-harness-staging.service` + `vesta-harness-staging.service.d/basepath.conf`, `nginx-harness.conf`, `staging-cordis.patch.yml`, `fillers.yaml`, `livekit-voice.docker-compose.yml`, `moshi-server.docker-compose.yaml`, `bin/*` |
 
 ## Prerequisites (once)
 
@@ -39,9 +39,12 @@ pnpm run build                                                        # host + c
 mkdir -p ~/.vesta-harness/profiles ~/.vesta-harness/.agent-presets
 cp -r ~/code/vesta-harness/deploy/vesta/profiles/vesta ~/.vesta-harness/profiles/
 cp ~/code/vesta-harness/deploy/vesta/settings.yaml ~/.vesta-harness/settings.yaml
-cp -r ~/code/vesta-harness/deploy/vesta/agent-presets/vesta-orch ~/.vesta-harness/.agent-presets/
+cp -r ~/code/vesta-harness/deploy/vesta/agent-presets/{vesta-default,vesta-orch,vesta-voice} ~/.vesta-harness/.agent-presets/
+cp ~/code/vesta-harness/deploy/vesta/home-cordis.patch.yml ~/.vesta-harness/cordis.patch.yml   # machine-wide MCP mounts (Telegram notifier)
 install -m 600 ~/.dsh/.credentials.yaml ~/.vesta-harness/.credentials.yaml   # VESTA_API_KEY; never in git
 ```
+
+`$DSH_HOME/cordis.patch.yml` is the machine-wide patch layer (every profile). It carries the host-plane MCP mounts that depend on this box — today only the Telegram notifier (`ai-telegram-mcp`, loopback 7335 → `mcp__telegram-notify__notify`). Memory and search are mounted by the versioned `dsh-vesta-app` bundle (`mcp__memory__*`, `mcp__search__*`); do not add them here again: a second `vesta-search` row (2026-09-09..11) put every search tool twice in the model's catalogue. The default agent preset is `vesta-default` (lean single agent: no delegation, no DeepSeek web search, web lookups through the search MCP); `vesta-orch` stays for fan-out and `vesta-voice` for calls (`settings.yaml` → `agent-presets.default`).
 
 Check the composed tree before booting:
 
@@ -53,10 +56,15 @@ cd ~/code/vesta-harness && DSH_HOME=~/.vesta-harness node apps/cli/lib/bin.js --
 
 ```bash
 install -m 644 ~/code/vesta-harness/deploy/vesta/vesta-harness.service ~/.config/systemd/user/vesta-harness.service
+install -D -m 644 ~/code/vesta-harness/deploy/vesta/vesta-harness.service.d/basepath.conf ~/.config/systemd/user/vesta-harness.service.d/basepath.conf   # DSH_BASE_PATH=/harness
 systemctl --user daemon-reload && systemctl --user enable --now vesta-harness
 systemctl --user status vesta-harness --no-pager
-tailscale serve --bg --https=8790 http://127.0.0.1:3081
+# reverse proxy: paste the /harness blocks from deploy/vesta/nginx-harness.conf into the :443 server block of
+# /srv/ai/compose/reverse-proxy/nginx.conf (back it up first; that project is not under git), then
+docker exec reverse-proxy nginx -t && docker exec reverse-proxy nginx -s reload
 ```
+
+The app assumes the site root unless `DSH_BASE_PATH` is set. With it, `frontend-static` emits `<base href="/harness/">`, the clients resolve every Host call (RPC, the gateway stream-mux WebSocket, HMR, uploads, the voice token and emotion routes) against `document.baseURI`, the post-login redirect lands on the prefix, plugin bundle URLs carry it, and the inlined Vesta font URLs are rewritten onto it (commits `a9ea2fd9fb`..`6eaee28660`). Dedicated-port fallback, no nginx involved: remove the drop-in, `systemctl --user daemon-reload && systemctl --user restart vesta-harness`, `tailscale serve --bg --https=8790 http://127.0.0.1:3081`, then `VESTA_BASE=https://vesta.tail22b555.ts.net:8790 vesta-url`.
 
 ## First visit from a browser
 
@@ -64,14 +72,15 @@ tailscale serve --bg --https=8790 http://127.0.0.1:3081
 
 ```bash
 install -m 755 ~/code/vesta-harness/deploy/vesta/bin/vesta-url ~/.local/bin/vesta-url
-vesta-url    # prints https://vesta.tail22b555.ts.net:8790/?token=… for the running process
+vesta-url    # prints https://vesta.tail22b555.ts.net/harness/?token=… for the running process (VESTA_UNIT=vesta-harness-staging → /harness-staging/)
 ```
 
 ## Verify
 
-- `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3081/` → `200`
-- `https://vesta.tail22b555.ts.net:8790` shows the Vesta brand (ember orb, "Vesta Harness") and the ember theme.
-- A new session answers through Qwen (`default`); `mcp__memory__*` / `mcp__search__*` appear in the tool list; the hero shows `vesta-orch`; `/permission` lists `read-only`, `workspace-write`, `danger-full-access`.
+- `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3081/` → `401` (the auth gate; a `404` in the first seconds after a restart only means the fallback route is not registered yet).
+- `https://vesta.tail22b555.ts.net/harness/` → `401` without the cookie; with it the index carries `<base href="/harness/">`, the three Vesta fonts (Inter, Space Grotesk, JetBrains Mono) load under the prefix, and the page shows the brand (veiled-goddess emblem, lowercase “vesta harness_” wordmark) on the ember theme.
+- A new session answers through Qwen (`default`); `mcp__memory__*`, `mcp__search__*` and `mcp__telegram-notify__notify` appear once each in the tool list; the hero shows `Vesta Default`; `/permission` lists `read-only`, `workspace-write`, `danger-full-access`.
+- Voice: the composer's “Start a voice call” goes Connecting → Listening → Speaking (the greeting) and `docker logs livekit-agent` shows `bridge bound: room=dsh-session-…`.
 
 ## Voice (Phase A)
 
@@ -168,6 +177,8 @@ Ask it to "list the tool names starting with mcp__" to confirm the memory and se
 cd ~/code/vesta-harness && git pull --ff-only origin vesta && pnpm install --frozen-lockfile && pnpm run build && systemctl --user restart vesta-harness
 ```
 
+A commit that touches a client plugin (`packages/client/*`) is not live until `pnpm run build` **and** the restart have both run after it: on 2026-09-10 the font-URL fix was committed after the last build and stayed undeployed until the next day.
+
 ## Old sessions from rc.7
 
 The rc.7 store (`~/.dsh/sessions`, format v0) is a different home; the new harness never reads it in place. `deploy/vesta/bin/vesta-migrate-sessions.mjs` copies each session directory into `~/.vesta-harness/sessions/<workspace>/` (the v0 file stays as the retained generation) and opens it through the real JSONL provider, which publishes `session.v2.jsonl.zstd` beside it. Pre-migrating matters: the web process's session index migrates inside a search request otherwise, and a multi-second migration aborts the search ("Content search is temporarily unavailable") while a refused log hides every later session. Restart the harness afterwards so the boot-time index sees them.
@@ -184,13 +195,13 @@ Forks (headers with `parentSession` + `seedLength`) migrate too, at ~30 s each f
 
 ## Staging instance (bleeding edge beside production)
 
-A second Harness runs from its own checkout and home so new work can be tried without touching `:8790`:
+A second Harness runs from its own checkout and home so new work can be tried without touching production:
 
 | | production | staging |
 |---|---|---|
 | checkout | `~/code/vesta-harness` (branch `vesta`) | `~/code/vesta-harness-staging` (branch `staging`) |
 | home | `~/.vesta-harness` | `~/.vesta-harness-staging` |
-| unit / port | `vesta-harness`, 3081 → tailnet `:8790` | `vesta-harness-staging`, 3082 → tailnet `:8792` |
+| unit / URL | `vesta-harness`, 3081 → `https://vesta.tail22b555.ts.net/harness/` (drop-in `DSH_BASE_PATH=/harness`) | `vesta-harness-staging`, 3082 → `…/harness-staging/` (drop-in `DSH_BASE_PATH=/harness-staging`) |
 | voice rooms | `dsh-session-<uuid>` | `dshs-session-<uuid>` (home patch `roomPrefix: dshs-`) |
 | worker | `livekit-agent` (accepts `dsh-*`, health `127.0.0.1:8081`) | `livekit-agent-staging` (compose profile `staging`, accepts `dshs-*`, health `127.0.0.1:8082`) |
 
@@ -204,19 +215,27 @@ H=~/.vesta-harness-staging; mkdir -p $H/profiles/vesta $H/.agent-presets $H/stor
 cp ~/.vesta-harness/settings.yaml ~/.vesta-harness/.credentials.yaml $H/ && chmod 600 $H/.credentials.yaml $H/settings.yaml
 cp -r ~/.vesta-harness/.agent-presets/. $H/.agent-presets/ && cp ~/.vesta-harness/profiles/vesta/{package.json,cordis.yml,pnpm-workspace.yaml} $H/profiles/vesta/ && mkdir -p $H/profiles/vesta/node_modules
 cp ~/code/vesta-harness-staging/deploy/vesta/staging-cordis.patch.yml $H/profiles/vesta/cordis.patch.yml
-cp ~/code/vesta-harness-staging/deploy/vesta/vesta-harness-staging.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now vesta-harness-staging
-tailscale serve --bg --https=8792 http://127.0.0.1:3082
+cp ~/code/vesta-harness-staging/deploy/vesta/vesta-harness-staging.service ~/.config/systemd/user/ && install -D -m 644 ~/code/vesta-harness-staging/deploy/vesta/vesta-harness-staging.service.d/basepath.conf ~/.config/systemd/user/vesta-harness-staging.service.d/basepath.conf && systemctl --user daemon-reload && systemctl --user enable --now vesta-harness-staging
+# nginx: the /harness-staging block from deploy/vesta/nginx-harness.conf (see “Service and tailnet”); until 2026-09-10 this was `tailscale serve --bg --https=8792 http://127.0.0.1:3082`
 cd /srv/ai/compose/livekit-voice && docker compose --profile staging up -d --build livekit-agent-staging
-VESTA_UNIT=vesta-harness-staging VESTA_PORT=8792 vesta-url      # first-visit URL for the staging instance
+VESTA_UNIT=vesta-harness-staging vesta-url      # first-visit URL for the staging instance
 ```
 
-Update staging: `cd ~/code/vesta-harness-staging && git pull origin staging && pnpm install --frozen-lockfile && pnpm run build && systemctl --user restart vesta-harness-staging`, plus `docker compose --profile staging up -d --build livekit-agent-staging` when `services/livekit-agent` changed. Scripted check against staging: `ROOM_PREFIX=dshs- docker exec livekit-agent-staging python /tmp/call-check.py <session-id> /tmp/p_hello.wav` (the staging harness's session id, created on `127.0.0.1:3082`). Promotion: merge `staging` into `vesta` and run the production update. Rollback: `systemctl --user disable --now vesta-harness-staging`, `tailscale serve --https=8792 off`, `docker compose --profile staging down` — production is never touched.
+Update staging: `cd ~/code/vesta-harness-staging && git fetch origin && git merge --ff-only origin/vesta && pnpm install --frozen-lockfile && pnpm run build && systemctl --user restart vesta-harness-staging` (the `staging` branch is `vesta` plus whatever is being tried; commit there and `git push origin staging`, never hand-copy files into the checkout), plus `docker compose --profile staging up -d --build livekit-agent-staging` when `services/livekit-agent` changed. Scripted check against staging: `ROOM_PREFIX=dshs- docker exec livekit-agent-staging python /tmp/call-check.py <session-id> /tmp/p_hello.wav` (the staging harness's session id, created on `127.0.0.1:3082`). Promotion: merge `staging` into `vesta` and run the production update. Rollback: `systemctl --user disable --now vesta-harness-staging` (the nginx `/harness-staging/` block then answers a branded 502; remove the block to hide the path), `docker compose --profile staging down` — production is never touched. On 2026-09-11 the checkout had drifted (uncommitted copies of production files, nine commits behind) and its settings had lost the staging-only `ceres` model entry; it was reset to `origin/vesta`, rebuilt, and `ceres` restored from `~/.vesta-harness-staging/RECOVERY-bak-20260910T170822/settings.yaml`.
+
+## Sub-path move (2026-09-10) and follow-up (2026-09-11)
+
+On 2026-09-10 both harnesses moved off their dedicated Serve listeners onto sub-paths of the shared `:443` host (done by another agent; commits `a9ea2fd9fb`, `4631d2dbc1`, `099a9aa40c`, `a044d22f9f`, `6eaee28660`, savepoint `ae2ff41f85`): nginx `location /harness/` and `/harness-staging/` (prefix stripped, WebSocket upgrade, 900 s timeouts) in `/srv/ai/compose/reverse-proxy/nginx.conf` (backups `nginx.conf.bak-harness-prod-20260910`, `nginx.conf.bak-harness-staging-20260910`), systemd drop-ins setting `DSH_BASE_PATH`, and `tailscale serve --https=8790 off` / `--https=8792 off`. The landing page links `/harness`; `/dsh` bounces there. The same days brought the brand pass (lowercase wordmark with a blinking caret, veiled-goddess emblem, favicon/manifest/tab title, retuned ambient ground), the `vesta-default` preset as the default, and the Telegram notifier mount (2026-09-09).
+
+Follow-up on 2026-09-11: the last of those commits (the unquoted-`url()` font fix) had been committed after the last build, so production was rebuilt and restarted; the duplicate search mount was removed from both homes; the `*.bak-*` and `dist.bak-*` files left in both checkouts were moved to `~/backups/harness-checkouts-bak-20260911/`; the drop-ins, nginx blocks, home patch and `vesta-url` were versioned here. Verified: token exchange `303 → /harness/`, base href, fonts and plugin bundles under the prefix, a scripted bridged call (replies 2.0 s and 1.5 s after the question, zero audio starves) and a headless-Firefox call through the composer mic (Connecting → Listening 1.5 s → Speaking 7.5 s, no failed requests).
+
+Rollback to the dedicated ports: remove the drop-in(s), `systemctl --user daemon-reload && systemctl --user restart vesta-harness`, `tailscale serve --bg --https=8790 http://127.0.0.1:3081` (`8792` → `3082` for staging), `VESTA_BASE=https://vesta.tail22b555.ts.net:8790 vesta-url`; the nginx blocks can stay.
 
 ## Cutover (done 2026-09-05) and rc.7 removal (2026-09-07)
 
 Cutover was three reversible steps: `tailscale serve --bg --https=8790 http://127.0.0.1:3081` (re-points the existing port; nginx's `/dsh` redirect follows), `systemctl --user disable --now dsh-web`, and `tailscale serve --https=8791 off`.
 
-The old install (`~/.dsh`, `~/code/dsh`, unit `dsh-web`) was then kept as the rollback until **2026-09-07, when rc.7 was removed** at the user's request — only production (`:8790`) and staging (`:8792`) run now. Steps taken: `dsh-web` stopped and disabled, the unit file `~/.config/systemd/user/dsh-web.service` deleted, and `tailscale serve --https=8791 off` (Serve now lists only `:8790` and `:8792`). It was backed up first to `~/backups` (`dsh-web.service.bak-before-remove-20260907` and `dsh-home.bak-before-remove-20260907.tar.gz` = the 34M `~/.dsh` home). `~/code/dsh` (315M) and `~/.dsh` (34M) are left inert on disk; neither is shared with the fork (both live units set `DSH_HOME=~/.vesta-harness{,-staging}`; no symlinks point into `~/code/dsh`).
+The old install (`~/.dsh`, `~/code/dsh`, unit `dsh-web`) was then kept as the rollback until **2026-09-07, when rc.7 was removed** at the user's request — only production and staging run now. Steps taken: `dsh-web` stopped and disabled, the unit file `~/.config/systemd/user/dsh-web.service` deleted, and `tailscale serve --https=8791 off` (Serve then listed only `:8790` and `:8792`; both went off on 2026-09-10 with the sub-path move). It was backed up first to `~/backups` (`dsh-web.service.bak-before-remove-20260907` and `dsh-home.bak-before-remove-20260907.tar.gz` = the 34M `~/.dsh` home). `~/code/dsh` (315M) and `~/.dsh` (34M) are left inert on disk; neither is shared with the fork (both live units set `DSH_HOME=~/.vesta-harness{,-staging}`; no symlinks point into `~/code/dsh`).
 
 To resurrect rc.7 from the backups if ever needed:
 
