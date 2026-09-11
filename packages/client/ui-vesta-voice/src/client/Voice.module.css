@@ -67,6 +67,30 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* Phone widths: the bar has more than a ~270px dock can hold, so the controls wrap onto
+   a second row (right-aligned) and the two niceties, the device name and the mic meter,
+   step aside; a capture error still shows. */
+@media (max-width: 480px) {
+  .bar {
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    padding: 6px 6px 6px 10px;
+  }
+  .hint {
+    display: none;
+  }
+  .hintError {
+    display: block;
+    flex-basis: 100%;
+    order: 3;
+  }
+  .meter {
+    display: none;
+  }
+  .actions {
+    margin-left: auto;
+  }
+}
 /* The ember orb: the agent's voice level drives its glow and size. */
 .orb {
   flex: none;
