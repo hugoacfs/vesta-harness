@@ -7,7 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-credentials'
 import { RoomAgentDispatch, RoomConfiguration } from '@livekit/protocol'
-import { AccessToken } from 'livekit-server-sdk'
+import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk'
 import type { Config } from './index.ts'
 
 /** Browser route minting one room token per call. */
@@ -89,8 +89,35 @@ async function tokenResponse(ctx: Context, config: Config, request: Request): Pr
   // instead; the claim stays available for an SFU that honours it.
   if (config.agentName.length > 0) {
     token.roomConfig = new RoomConfiguration({ agents: [new RoomAgentDispatch({ agentName: config.agentName })] })
+    // livekit-server 1.13 ignores the token claim, so also ask the SFU's API for an explicit
+    // dispatch to the named worker (the room is created with it when it does not exist yet).
+    // Idempotent per room, best effort: a refusal is logged and the caller still joins.
+    await requestDispatch(ctx, config, roomName, key.value, secret.value)
   }
   return Response.json({ serverUrl: config.livekitUrl, roomName, token: await token.toJwt() })
+}
+
+/** HTTP endpoint of the SFU's API: the configured one, else the signaling URL with its scheme swapped. */
+function apiUrl(config: Config): string {
+  if (config.livekitApiUrl !== '') return config.livekitApiUrl
+  return config.livekitUrl.replace(/^wss:/u, 'https:').replace(/^ws:/u, 'http:')
+}
+
+async function requestDispatch(ctx: Context, config: Config, roomName: string, apiKey: string, apiSecret: string): Promise<void> {
+  const client = new AgentDispatchClient(apiUrl(config), apiKey, apiSecret)
+  try {
+    let existing: readonly { readonly agentName: string }[] = []
+    try {
+      existing = await client.listDispatch(roomName)
+    } catch {
+      existing = []   // no room yet: nothing dispatched
+    }
+    if (existing.some(dispatch => dispatch.agentName === config.agentName)) return
+    await client.createDispatch(roomName, config.agentName)
+    ctx.logger.info(`vesta-voice: dispatched ${config.agentName} to ${roomName}`)
+  } catch (error: unknown) {
+    ctx.logger.warn(`vesta-voice: explicit dispatch of ${config.agentName} to ${roomName} failed: ${String(error)}`)
+  }
 }
 
 async function emotionResponse(config: Config, request: Request): Promise<Response> {

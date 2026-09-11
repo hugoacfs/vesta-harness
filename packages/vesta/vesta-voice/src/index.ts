@@ -25,6 +25,11 @@ export const inject = ['webServer', 'connection', 'sessionController', 'credenti
 export interface Config {
   /** LiveKit signaling URL the browser connects to (`wss://…`). */
   livekitUrl: string
+  /**
+   * HTTP endpoint of the SFU's API used for explicit agent dispatch when `agentName` is set;
+   * empty derives it from `livekitUrl` by swapping the scheme. @default ''
+   */
+  livekitApiUrl: string
   /** Credential reference holding the LiveKit API key. @default 'LIVEKIT_API_KEY' */
   apiKeyRef: string
   /** Credential reference holding the LiveKit API secret; also the bridge bearer. @default 'LIVEKIT_API_SECRET' */
@@ -54,6 +59,7 @@ export interface Config {
 /** Validate the voice bridge configuration. */
 export const Config: z<Config> = z.object({
   livekitUrl: z.string().required(),
+  livekitApiUrl: z.string().default(''),
   apiKeyRef: z.string().default('LIVEKIT_API_KEY'),
   apiSecretRef: z.string().default('LIVEKIT_API_SECRET'),
   bridgePath: z.string().default('/vesta/voice/bridge'),

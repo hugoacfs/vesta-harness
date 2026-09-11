@@ -21,6 +21,7 @@ Wire protocol (msgpack over websockets, 24 kHz float32 mono PCM):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import time
@@ -35,7 +36,7 @@ import aiohttp
 import msgpack
 import numpy as np
 import websockets
-from livekit.agents import APIConnectionError, APIError, stt, tts, utils, vad as lk_vad
+from livekit.agents import APIConnectionError, APIStatusError, APIError, stt, tts, utils, vad as lk_vad
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions, NotGivenOr, NOT_GIVEN
 from livekit.agents.utils import aio
 
@@ -246,6 +247,7 @@ class KyutaiTTS(tts.TTS):
         self._api_key = api_key
         self._speed = speed
         self._active: KyutaiSynthesizeStream | None = None   # the reply stream currently open, if any
+        self._gate: tuple[asyncio.AbstractEventLoop, asyncio.Semaphore] | None = None   # see _channel_gate
 
     @property
     def label(self) -> str:
@@ -278,6 +280,18 @@ class KyutaiTTS(tts.TTS):
     def _ws_url(self) -> str:
         return f"{self._url}/api/tts_streaming?voice={quote(self._voice, safe='')}&format=PcmMessagePack"
 
+    def _channel_gate(self) -> asyncio.Semaphore:
+        """One server utterance at a time per engine. The moshi TTS pool has two channels shared
+        by every call on the box, and an utterance's socket outlives its last word by the server's
+        generation tail, so back-to-back replies (or a reply plus a filler-opened stream) overlapped
+        and the third socket was refused with 'no free channels' — after which LiveKit retried every
+        later utterance (2026-09-07). Serialising the sockets keeps one call on one channel.
+        Lazily bound to the running loop: the prewarm renderer drives its own engine on a thread loop."""
+        loop = asyncio.get_running_loop()
+        if self._gate is None or self._gate[0] is not loop:
+            self._gate = (loop, asyncio.Semaphore(1))
+        return self._gate[1]
+
     def synthesize(self, text: str, *, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS) -> tts.ChunkedStream:
         return KyutaiChunkedStream(tts=self, input_text=text, conn_options=conn_options)
 
@@ -296,6 +310,10 @@ class KyutaiTTS(tts.TTS):
 
     async def _speak(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float = 30.0) -> None:
         """Drive one utterance: words in (None ends it), float32 pcm chunks out via on_pcm."""
+        async with self._channel_gate():
+            await self._speak_gated(words, on_pcm, ready_deadline)
+
+    async def _speak_gated(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float) -> None:
         try:
             ws = await websockets.connect(self._ws_url(), additional_headers=_headers(self._api_key), max_size=None, open_timeout=ready_deadline)
         except Exception as e:  # noqa: BLE001
@@ -316,7 +334,13 @@ class KyutaiTTS(tts.TTS):
                     if kind == "Audio":
                         on_pcm(np.asarray(msg["pcm"], dtype=np.float32))
                     elif kind == "Error":
-                        raise APIError(f"kyutai tts: {msg.get('message')}")
+                        message = str(msg.get("message"))
+                        if "no free channel" in message.lower():
+                            # Another call holds the server's pool: worth LiveKit's bounded retry
+                            # (3 x 2 s), never a storm — this engine's own utterances are serialised.
+                            log.warning("kyutai tts: server refused a channel (%s)", message)
+                            raise APIStatusError(f"kyutai tts: {message}", status_code=503, retryable=True)
+                        raise APIError(f"kyutai tts: {message}", retryable=False)
 
             send_task = asyncio.create_task(send())
             try:
@@ -456,6 +480,12 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
                 self._kyutai._active = None
             if not next_item.done():
                 next_item.cancel()
+            if speak_task is not None and not speak_task.done():
+                # Interrupted mid-utterance (barge-in or an error): close the server socket now so the
+                # channel frees for the next reply instead of finishing the abandoned utterance.
+                speak_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await speak_task
             if speaking or clips:
                 log.info("kyutai tts: utterance %s, word gaps over %dms %d, clips %d",
                          pacer.summary(), int(TEXT_GAP_S * 1000), text_gaps, clips)

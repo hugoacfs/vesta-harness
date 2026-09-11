@@ -11,6 +11,7 @@ While a room is bound the bridge is also the outermost `approval/request` answer
 | Field | Default | Meaning |
 |---|---|---|
 | `livekitUrl` | required | LiveKit signaling URL for browsers |
+| `livekitApiUrl` | `''` | HTTP endpoint of the SFU's API for explicit agent dispatch (`agentName` set); empty derives it from `livekitUrl` |
 | `apiKeyRef` / `apiSecretRef` | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | credential references (stored in `$DSH_HOME/.credentials.yaml`) |
 | `bridgePath` | `/vesta/voice/bridge` | upgrade path on the Host web server |
 | `mediaUrl` | absent | STT sidecar base URL for the perception toggle |

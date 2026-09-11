@@ -8,6 +8,10 @@
     livekitUrl: wss://vesta.tail22b555.ts.net:8481
     mediaUrl: http://127.0.0.1:8011
     roomPrefix: dshs-
+    # Named worker: livekit-server 1.13 ignores the token claim, so the token route also
+    # requests an explicit dispatch through the SFU's API (2026-09-11, plan P3).
+    agentName: vesta-staging
+    livekitApiUrl: http://192.168.0.2:7880
 
 # Staging-only (2026-09-11, feature plan P2): short notifier thresholds so the Telegram
 # pings can be exercised in minutes. A patch replaces the whole config, so linkBase is

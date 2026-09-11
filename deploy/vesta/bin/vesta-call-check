@@ -96,6 +96,17 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
             heard["frames"] += 1
             heard["ms"] += event.frame.samples_per_channel / event.frame.sample_rate * 1000
 
+    if AGENT_NAME:
+        # livekit-server 1.13 ignores the token's dispatch claim: ask the API for an explicit
+        # dispatch (creates the room with it), exactly as the harness's token route does.
+        lk = api.LiveKitAPI(url=LIVEKIT_URL.replace("ws://", "http://").replace("wss://", "https://"))
+        try:
+            await lk.agent_dispatch.create_dispatch(api.CreateAgentDispatchRequest(agent_name=AGENT_NAME, room=room_name))
+            print(f"explicit dispatch of {AGENT_NAME} requested for {room_name}", flush=True)
+        finally:
+            close = getattr(lk, "aclose", None)
+            if close is not None:
+                await close()
     await room.connect(LIVEKIT_URL, token(room_name))
     print(f"joined {room_name} as {room.local_participant.identity}", flush=True)
     for p in room.remote_participants.values():
