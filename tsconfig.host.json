@@ -300,6 +300,7 @@
     { "path": "./packages/bundle/web-app" },
     { "path": "./packages/bundle/vesta-app" },
     { "path": "./packages/vesta/vesta-voice" },
+    { "path": "./packages/vesta/vesta-notify" },
     { "path": "./packages/boot/app-boot" },
     { "path": "./packages/boot/cmdline" },
     { "path": "./packages/sdk/server" },

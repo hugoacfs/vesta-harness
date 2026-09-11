@@ -34,6 +34,10 @@
     - id: ui-vesta-voice
       name: '@deepseek-ai/dsh-client-ui-vesta-voice'
 
+    # ── presence: a visible-tab heartbeat that feeds vesta-notify ──────────
+    - id: ui-vesta-presence
+      name: '@deepseek-ai/dsh-client-ui-vesta-presence'
+
     # Host half: room tokens, the agent bridge upgrade route, the spoken-mode
     # prompt section, and the perception-toggle proxy. LiveKit credentials are
     # credential references (LIVEKIT_API_KEY / LIVEKIT_API_SECRET in
@@ -45,6 +49,16 @@
       config:
         livekitUrl: wss://vesta.tail22b555.ts.net:8481
         mediaUrl: http://127.0.0.1:8011
+
+    # ── notify: Telegram pings while no tab is looking ─────────────────────
+    # Delivery through the send-only telegram-notify MCP (ai-telegram-mcp on
+    # loopback 7335); the bot token never reaches the harness. Triggers and
+    # thresholds are the plugin defaults (long turn ≥ 120 s, approval or
+    # question waiting ≥ 60 s, only while no visible tab for 90 s).
+    - id: vesta-notify
+      name: '@deepseek-ai/dsh-vesta-notify'
+      config:
+        linkBase: https://vesta.tail22b555.ts.net/harness/
 
     # ── host: vesta MCP servers ─────────────────────────────────────────────
     - id: mcp-vesta-memory

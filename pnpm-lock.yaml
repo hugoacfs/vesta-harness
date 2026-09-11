@@ -1760,6 +1760,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-vesta-brand':
         specifier: workspace:^
         version: link:../../client/ui-vesta-brand
+      '@deepseek-ai/dsh-client-ui-vesta-presence':
+        specifier: workspace:^
+        version: link:../../client/ui-vesta-presence
       '@deepseek-ai/dsh-client-ui-vesta-theme':
         specifier: workspace:^
         version: link:../../client/ui-vesta-theme
@@ -1769,6 +1772,9 @@ importers:
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:^
         version: link:../../mcp/mcp-client
+      '@deepseek-ai/dsh-vesta-notify':
+        specifier: workspace:^
+        version: link:../../vesta/vesta-notify
       '@deepseek-ai/dsh-vesta-voice':
         specifier: workspace:^
         version: link:../../vesta/vesta-voice
@@ -4475,6 +4481,12 @@ importers:
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
+
+  packages/client/ui-vesta-presence:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
 
   packages/client/ui-vesta-theme:
     devDependencies:
@@ -10583,6 +10595,28 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+
+  packages/vesta/vesta-notify:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-user-approval':
+        specifier: workspace:^
+        version: link:../../interaction/user-approval
+      '@deepseek-ai/dsh-user-questions':
+        specifier: workspace:^
+        version: link:../../interaction/user-questions
 
   packages/vesta/vesta-voice:
     dependencies:
