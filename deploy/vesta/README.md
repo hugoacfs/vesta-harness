@@ -139,6 +139,10 @@ Scripted checks reach the harness only with the full session id: `vesta-call-che
 
 `moshi-server` serves two TTS channels for the whole box (`configs/vesta.toml`, `batch_size = 2`) and an utterance's socket stays open for the server's generation tail after the last word. Since 2026-09-11 each worker process serialises its utterances (`KyutaiTTS._channel_gate`), so one call holds one channel and back-to-back replies no longer overlap; an interrupted reply closes its socket at once. A refusal from the pool (`kyutai tts: server refused a channel`) therefore means another call holds both channels — LiveKit retries it 3 × 2 s and then drops the utterance. Raising `batch_size` costs 3060 memory (≈2 GB free); leave it at 2 unless two calls at once become normal.
 
+### Speech speed
+
+The call bar's speed chip (1.0× to 1.3×, since 2026-09-11) posts `{ sessionId, speed }` to `POST /api/vesta/voice/config`; the bridge forwards a `config` frame and the agent applies the speed from its next utterance (`TTS_SPEED` in the compose file stays the default, 1.2). The choice is remembered per browser in `localStorage` (`vesta.voice.speed`). Filler clips are rendered once at the default speed and keep it. Evidence of a change: `docker logs livekit-agent | grep 'harness config'`.
+
 ## Vesta Voice preset
 
 `deploy/vesta/agent-presets/vesta-voice` is a lean composition for sessions you mostly talk to: shell, files, search, background jobs, web search plus the bundle's MCP servers, without delegation, workflow, ralph, planning, skills, todo, goal or ask-user. Fewer tool schemas and prompt sections mean a smaller request prefix, so the first spoken reply after a quiet spell arrives sooner. Install it like vesta-orch (`cp -r … ~/.vesta-harness/.agent-presets/`; the roster re-scans on every read, no restart) and pick it in the hero's preset selector before the first message; a session's preset is fixed once it has produced anything. `preset.yml` descriptions with a colon must be quoted or the roster shows the bare id.
