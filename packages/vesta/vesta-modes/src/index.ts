@@ -83,10 +83,10 @@ export interface Config {
 
 const DEFAULT_CHOICES = ['vesta-ops', 'vesta-build', 'vesta-research', 'vesta-companion']
 const DEFAULT_DESCRIPTIONS: Record<string, string> = {
-  'vesta-ops': 'this machine or the user\'s other boxes and services: docker, systemd, disks, network, backups, logs, status checks, running commands, fixing what is broken, files on the server',
+  'vesta-ops': 'this machine or the user\'s other boxes and services: docker, systemd, disks, network, backups, logs, checking status, running commands, fixing what is broken, files on the server',
   'vesta-build': 'writing or changing code in a repository: features, bugs, tests, refactors, git, reviewing or explaining a codebase',
-  'vesta-research': 'finding out and explaining: questions to look up, reading or comparing sources, PDFs, summaries, advice on a topic — nothing on the machine changes',
-  'vesta-companion': 'conversation and everyday help: chat, feelings, plans, reminders, brainstorming, anything that is not about this machine or code',
+  'vesta-research': 'a question to answer or explain — technical, factual or comparative (what is, how does, difference between, which is better, why), reading or comparing sources, PDFs, summaries, advice on a subject; nothing on the machine changes',
+  'vesta-companion': 'personal conversation and everyday life only: how the day went, feelings, plans, reminders, small talk, brainstorming about life — never a technical or factual question',
 }
 
 const DEFAULT_AUTO: AutoConfig = {
@@ -297,6 +297,11 @@ export function apply(ctx: Context, config: Config): void {
       'You route the first message of a new conversation with Vesta, a personal AI operator on the user\'s home server, to one mode.',
       `Answer with exactly one word, the mode name: ${auto.choices.map(labelOf).join(', ')}. Nothing else.`,
       ...lines,
+      'A technical or factual question is research even when it is phrased casually or says no tools are needed;'
+      + ' companion is only for personal, social or everyday-life talk. Something to check, run or fix on a machine is ops;'
+      + ' something to change in code is build.',
+      'Examples: "is docker healthy on the box?" → ops. "fix the failing test in cron.ts" → build.'
+      + ' "what is the difference between X and Y?" → research. "rough day, fancy a chat?" → companion.',
       cwd === undefined ? '' : `The conversation's working directory is ${cwd} (a code repository suggests ${labelOf(auto.choices[1] ?? 'build')}; a home directory suggests ${labelOf(auto.choices[0] ?? 'ops')}).`,
     ].filter(line => line !== '').join('\n')
   }
