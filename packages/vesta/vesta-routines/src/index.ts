@@ -328,6 +328,8 @@ export function apply(ctx: Context, config: Config): void {
   const sessionToRoutine = new Map<string, string>()
   const active = new Map<string, Run>()
   const passive = new Map<string, Run>()
+  /** The turn most recently opened in each thread: `turn/start` precedes the turn's `user/message`. */
+  const lastTurn = new Map<string, number>()
   const queue: Queued[] = []
   const schedules = new Map<string, CronSchedule>()
   let importErrors: string[] = []
@@ -352,6 +354,17 @@ export function apply(ctx: Context, config: Config): void {
     threads.set(folder.name, thread)
     if (thread.sessionId !== undefined) sessionToRoutine.set(thread.sessionId, folder.name)
     return thread
+  }
+  const passiveRun = (session: { id: SessionId }, folder: RoutineFolder, trigger: 'chat' | 'reminder', info: string, seq: number): void => {
+    const thread = threads.get(folder.name)
+    const routine = folder.routine
+    if (thread === undefined || routine === undefined || passive.has(session.id)) return
+    thread.runs += 1
+    const turn = lastTurn.get(session.id)
+    passive.set(session.id, {
+      name: folder.name, routine, trigger, info, startedAt: Date.now(), runNumber: thread.runs, sessionId: session.id, seqFrom: seq, text: '',
+      ...(turn === undefined ? {} : { turn }),
+    })
   }
   const saveThread = async (folder: RoutineFolder): Promise<void> => {
     const thread = threads.get(folder.name)
@@ -617,37 +630,29 @@ export function apply(ctx: Context, config: Config): void {
     const data = record.data as ThreadEventData | undefined
     const own = active.get(routineName)
     const ours = own !== undefined && own.sessionId === session.id ? own : undefined
+    if (record.type === 'turn/start' && typeof data?.turn === 'number') lastTurn.set(session.id, data.turn)
     if (record.type === 'user/message') {
       const source = data?.source
       if (source?.kind === 'user') {
         if (ours !== undefined && ours.seqFrom === undefined && source.rpcId === ours.requestId) {
           ours.seqFrom = record.seq
+          const opened = lastTurn.get(session.id)
+          if (ours.turn === undefined && opened !== undefined) ours.turn = opened
           return
         }
-        if (folder.routine !== undefined && !passive.has(session.id)) {
-          void threadOf(folder).then((thread) => {
-            thread.runs += 1
-            passive.set(session.id, {
-              name: routineName, routine: folder.routine as Routine, trigger: 'chat', info: '', startedAt: Date.now(), runNumber: thread.runs, sessionId: session.id, seqFrom: record.seq, text: '',
-            })
-          })
-        }
+        passiveRun(session, folder, 'chat', '', record.seq)
         return
       }
-      if (source?.kind === 'plugin' && source.plugin === 'schedule' && folder.routine !== undefined && !passive.has(session.id)) {
-        void threadOf(folder).then((thread) => {
-          thread.runs += 1
-          passive.set(session.id, {
-            name: routineName, routine: folder.routine as Routine, trigger: 'reminder', info: userText(data).slice(0, SUMMARY_CHARS), startedAt: Date.now(), runNumber: thread.runs, sessionId: session.id, seqFrom: record.seq, text: '',
-          })
-        })
+      if (source?.kind === 'plugin' && source.plugin === 'schedule') {
+        passiveRun(session, folder, 'reminder', userText(data).slice(0, SUMMARY_CHARS), record.seq)
         return
       }
       if (source?.kind === 'plugin' && source.plugin === 'compact') {
-        void threadOf(folder).then(async (thread) => {
+        const thread = threads.get(routineName)
+        if (thread !== undefined) {
           thread.lastCompaction = userText(data).slice(0, COMPACTION_CHARS)
-          await saveThread(folder)
-        })
+          void saveThread(folder)
+        }
       }
       return
     }
@@ -657,10 +662,7 @@ export function apply(ctx: Context, config: Config): void {
       ? ours
       : passive.get(session.id)
     if (current === undefined) return
-    if (record.type === 'turn/start') {
-      if (current.turn === undefined) current.turn = turn
-      return
-    }
+    if (current.turn === undefined) current.turn = turn
     if (current.turn !== turn) return
     if (record.type === 'assistant/message') {
       const text = assistantText(data)
