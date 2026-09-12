@@ -52,6 +52,20 @@ import type {
   SessionRequestId,
 } from './types.ts'
 
+/**
+ * Vesta fork (roadmap M5): a host plugin may provide `vestaPromptRouter` to
+ * inspect the first prompt of a blank session and recompose its agent (Auto
+ * mode) before the prompt is admitted. Structural on purpose: this package
+ * never imports the fork's packages.
+ */
+interface VestaPromptRouter {
+  beforePrompt(agent: Agent, request: SessionPromptRequest): Promise<Agent>
+}
+
+function isPromptRouter(value: unknown): value is VestaPromptRouter {
+  return typeof value === 'object' && value !== null && typeof (value as { beforePrompt?: unknown }).beforePrompt === 'function'
+}
+
 interface SessionReadState {
   readonly id: SessionId
   readonly header: SessionHeader
@@ -317,7 +331,10 @@ export class SessionCommandController {
         { value: request.clientTimeZone },
       )
     }
-    const agent = await this.resolveAgent(request.sessionId)
+    let agent = await this.resolveAgent(request.sessionId)
+    // Vesta fork (roadmap M5): a host prompt router may recompose a blank session before admission.
+    const router: unknown = this.ctx.get('vestaPromptRouter', false)
+    if (isPromptRouter(router)) agent = await router.beforePrompt(agent, request)
     if (hasPromptRequest(agent, request.requestId)) return { accepted: true }
     const selection = this.agents.selectionFor(agent).current
     if (!routeServed(this.ctx, selection.provider)) {

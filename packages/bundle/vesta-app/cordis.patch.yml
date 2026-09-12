@@ -105,6 +105,13 @@
           vesta-research: { label: Research, permission: read-only, reasoning: xhigh }
           vesta-companion: { label: Companion, permission: read-only, reasoning: 'off' }
           vesta-incognito: { label: Incognito, permission: read-only, reasoning: 'off', switchable: false }
+          # Auto (roadmap M5): read-only until the first message is routed to a real mode.
+          vesta-auto: { label: Auto, permission: read-only, reasoning: xhigh, switchable: false }
+        auto:
+          enabled: true
+          preset: vesta-auto
+          fallback: vesta-ops
+          timeoutMs: 8000
 
     # ── incognito (roadmap M4, 2026-09-11) ─────────────────────────────────
     # Sessions on the vesta-incognito preset: memory writes refused, title pinned,

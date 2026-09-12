@@ -10,14 +10,27 @@
  * new guidance replaces the old one; the tool set cannot change once a session
  * has produced anything (upstream rule). Overrides persist per session in
  * `$DSH_HOME/mode-overrides.json` so a resume keeps them.
+ *
+ * Auto (roadmap M5): a session created on the `auto.preset` never runs a turn as
+ * itself. The `vestaPromptRouter` service (called by the session controller's
+ * fork hook before a prompt is admitted) classifies the first message with one
+ * short model call, swaps the blank session to the chosen mode through
+ * upstream's own blank-session preset switch (`agentPresets.select`) and applies
+ * that mode's tier and reasoning; a `/mode` typed before the first message wins
+ * over the classifier, and a failed classification lands on `auto.fallback`.
  */
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
+import type { SessionPromptRequest } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-commands'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { BlockAssembler, createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import { scopeChainOf } from '@deepseek-ai/dsh-scope'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -28,7 +41,7 @@ import z from '@deepseek-ai/schemastery'
 export const name = 'vesta-modes'
 
 /** Required services: Session store, Session controller, permission presets, the system prompt and the command registry. */
-export const inject = ['sessions', 'sessionController', 'permissionPresets', 'systemPrompt', 'commands']
+export const inject = ['sessions', 'sessionController', 'permissionPresets', 'systemPrompt', 'commands', 'agentPresets', 'llm']
 
 /** What one mode applies at session start; either field may be left out. */
 export interface ModeSettings {
@@ -43,10 +56,41 @@ export interface ModeSettings {
 }
 
 /** Preset id → settings. Presets absent from the map are left alone. */
+/** Auto mode (roadmap M5): the placeholder preset and how its first message is routed. */
+export interface AutoConfig {
+  /** Route first messages of sessions on `preset`. @default true */
+  enabled: boolean
+  /** The placeholder preset New Session offers as Auto. @default 'vesta-auto' */
+  preset: string
+  /** The mode chosen when the classifier fails or answers nonsense. @default 'vesta-ops' */
+  fallback: string
+  /** The presets the classifier may choose (each must be in `modes`). */
+  choices: string[]
+  /** One line per choice, keyed by preset id, telling the classifier what the mode is for. */
+  descriptions: Record<string, string>
+  /** Classifier deadline. @default 8000 */
+  timeoutMs: number
+  /** Longest prefix of the first message shown to the classifier. @default 2000 */
+  maxChars: number
+}
+
 export interface Config {
   modes: Record<string, ModeSettings>
   /** Where `/mode` overrides are kept; empty = `$DSH_HOME/mode-overrides.json`. @default '' */
   overridesFile: string
+  auto: AutoConfig
+}
+
+const DEFAULT_CHOICES = ['vesta-ops', 'vesta-build', 'vesta-research', 'vesta-companion']
+const DEFAULT_DESCRIPTIONS: Record<string, string> = {
+  'vesta-ops': 'this machine or the user\'s other boxes and services: docker, systemd, disks, network, backups, logs, status checks, running commands, fixing what is broken, files on the server',
+  'vesta-build': 'writing or changing code in a repository: features, bugs, tests, refactors, git, reviewing or explaining a codebase',
+  'vesta-research': 'finding out and explaining: questions to look up, reading or comparing sources, PDFs, summaries, advice on a topic — nothing on the machine changes',
+  'vesta-companion': 'conversation and everyday help: chat, feelings, plans, reminders, brainstorming, anything that is not about this machine or code',
+}
+
+const DEFAULT_AUTO: AutoConfig = {
+  enabled: true, preset: 'vesta-auto', fallback: 'vesta-ops', choices: DEFAULT_CHOICES, descriptions: DEFAULT_DESCRIPTIONS, timeoutMs: 8000, maxChars: 2000,
 }
 
 export const Config: z<Config> = z.object({
@@ -57,6 +101,15 @@ export const Config: z<Config> = z.object({
     switchable: z.boolean().default(true),
   })).default({}),
   overridesFile: z.string().default(''),
+  auto: z.object({
+    enabled: z.boolean().default(true),
+    preset: z.string().default('vesta-auto'),
+    fallback: z.string().default('vesta-ops'),
+    choices: z.array(z.string()).default(DEFAULT_CHOICES),
+    descriptions: z.dict(z.string()).default(DEFAULT_DESCRIPTIONS),
+    timeoutMs: z.number().default(8000),
+    maxChars: z.number().default(2000),
+  }).default(DEFAULT_AUTO),
 })
 
 const RETRY_DELAY_MS = 400
@@ -234,6 +287,93 @@ export function apply(ctx: Context, config: Config): void {
       text: `Switched to ${mode.label ?? preset}: ${mode.permission ?? 'tier unchanged'}, reasoning ${mode.reasoning ?? 'unchanged'}. The persona guidance changes from the next reply; the tools stay those of ${session.header.agentPreset ?? 'the original mode'}.`,
     }
   }
+
+  // Auto (roadmap M5): route the first message of a blank Auto session to a mode.
+  const auto: AutoConfig = { ...DEFAULT_AUTO, ...config.auto }
+  const labelOf = (preset: string): string => (config.modes[preset]?.label ?? preset).toLowerCase()
+  const routerSystem = (cwd: string | undefined): string => {
+    const lines = auto.choices.map(preset => `${labelOf(preset)} — ${auto.descriptions[preset] ?? preset}`)
+    return [
+      'You route the first message of a new conversation with Vesta, a personal AI operator on the user\'s home server, to one mode.',
+      `Answer with exactly one word, the mode name: ${auto.choices.map(labelOf).join(', ')}. Nothing else.`,
+      ...lines,
+      cwd === undefined ? '' : `The conversation's working directory is ${cwd} (a code repository suggests ${labelOf(auto.choices[1] ?? 'build')}; a home directory suggests ${labelOf(auto.choices[0] ?? 'ops')}).`,
+    ].filter(line => line !== '').join('\n')
+  }
+  const parseChoice = (answer: string): string | undefined => {
+    const word = answer.toLowerCase().replace(/[^a-z-]+/gu, ' ').trim().split(/\s+/u)[0] ?? ''
+    if (word === '') return undefined
+    for (const preset of auto.choices) {
+      if (word === labelOf(preset) || word === preset || `vesta-${word}` === preset) return preset
+    }
+    return undefined
+  }
+  const classify = async (text: string, cwd: string | undefined): Promise<{ preset: string | undefined; answer: string }> => {
+    const route = ctx.get('agentDefaultModel')?.currentSelection()
+    if (route === undefined) throw new Error('no default model selection yet')
+    const options: GenerateOptions = {
+      provider: route.provider,
+      model: route.model,
+      reasoningEffort: ReasoningEffortId('off'),
+      system: routerSystem(cwd),
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: text.slice(0, auto.maxChars) }],
+        source: { kind: 'plugin', plugin: 'vesta-modes' },
+      })],
+      temperature: 0,
+      maxTokens: 8,
+      signal: AbortSignal.timeout(auto.timeoutMs),
+    }
+    const assembler = new BlockAssembler()
+    for await (const chunk of ctx.llm.stream(options)) assembler.push(chunk)
+    const answer = assembler.blocks()
+      .map(block => (block.type === 'text' ? block.text : ''))
+      .join(' ')
+      .trim()
+    return { preset: parseChoice(answer), answer }
+  }
+  const beforePrompt = async (agent: Agent, request: SessionPromptRequest): Promise<Agent> => {
+    if (!auto.enabled) return agent
+    const session = agent.session
+    const composed = ctx.agentPresets.composedPreset(agent.ctx) ?? session.header.agentPreset
+    if (composed !== auto.preset || hasTurn(session)) return agent
+    const started = Date.now()
+    const text = request.content.map(part => (part.type === 'text' ? part.text : '')).join('\n').trim()
+    const override = overrides.get(session.id)
+    let chosen = override
+    let answer = override === undefined ? '' : `/mode ${override}`
+    if (chosen === undefined) {
+      try {
+        const verdict = await classify(text, session.header.cwd)
+        chosen = verdict.preset
+        answer = verdict.answer
+      } catch (error: unknown) {
+        ctx.logger.warn(`vesta-modes: auto classifier failed for ${session.id}: ${String(error)}`)
+      }
+    }
+    const preset = chosen !== undefined && config.modes[chosen] !== undefined ? chosen : auto.fallback
+    try {
+      await ctx.agentPresets.select(agent, preset)
+    } catch (error: unknown) {
+      ctx.logger.warn(`vesta-modes: auto could not switch ${session.id} to ${preset}: ${String(error)}`)
+      return agent
+    }
+    if (override !== undefined) {
+      // The composition now is the override; the soft-switch section would be wrong.
+      overrides.delete(session.id)
+      rendered.delete(session.id)
+      await saveOverrides()
+    }
+    try {
+      await applySettings(session, preset)
+    } catch (error: unknown) {
+      ctx.logger.warn(`vesta-modes: auto applied ${preset} to ${session.id} but not its settings: ${String(error)}`)
+    }
+    const ms = Date.now() - started
+    ctx.logger.info(`vesta-modes: auto routed ${session.id} → ${preset} in ${String(ms)} ms (answer "${answer.slice(0, 40)}")`)
+    return ctx.get('agents')?.get(session.id) ?? agent
+  }
+  ctx.provide('vestaPromptRouter', { beforePrompt })
 
   ctx.effect(() => ctx.commands.register({
     name: 'mode',

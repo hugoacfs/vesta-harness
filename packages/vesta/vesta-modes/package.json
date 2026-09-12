@@ -1,23 +1,32 @@
 {
   "name": "@deepseek-ai/dsh-vesta-modes",
-  "description": "Vesta modes: the permission tier and reasoning level a session starts with, keyed on its agent preset, and the /mode command that switches a running session's guidance, tier and reasoning",
-  "version": "0.2.0",
+  "description": "Vesta modes: tier and reasoning per mode preset at session start, /mode soft switch, and Auto (first-message routing to a mode)",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
-    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "files": ["lib/index.js", "lib/types/**/*.d.ts"],
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.d.ts"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-agent-default-model": "workspace:^",
+    "@deepseek-ai/dsh-agent-presets": "workspace:^",
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-commands": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-permission-presets": "workspace:^",
     "@deepseek-ai/dsh-scope": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
@@ -25,6 +34,11 @@
     "@deepseek-ai/schemastery": "workspace:^",
     "js-yaml": "^4.2.0"
   },
-  "peerDependencies": { "@deepseek-ai/cordis": "workspace:^" },
-  "devDependencies": { "@deepseek-ai/cordis": "workspace:^", "@types/js-yaml": "^4.0.9" }
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@types/js-yaml": "^4.0.9"
+  }
 }

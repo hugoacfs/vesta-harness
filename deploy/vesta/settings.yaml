@@ -51,7 +51,8 @@ agent-default-model:
   model: default
   reasoningEffort: xhigh
 agent-presets:
-  default: vesta-ops
+  # Auto (roadmap M5, 2026-09-12): the first message picks Ops, Build, Research or Companion.
+  default: vesta-auto
 llm-deepseek:
   models: []
 permission:
