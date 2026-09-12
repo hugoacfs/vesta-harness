@@ -140,6 +140,7 @@ interface Run {
   inputTokens?: number
   timer?: ReturnType<typeof setTimeout>
   timedOut?: boolean
+  finished?: boolean
 }
 
 /** The fields of thread events the observer reads. */
@@ -502,11 +503,12 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   const finish = async (folder: RoutineFolder, current: Run, outcome: Outcome, detail: string): Promise<void> => {
+    if (current.finished === true) return
+    current.finished = true
     if (current.timer !== undefined) clearTimeout(current.timer)
     const unattended = current.requestId !== undefined
     if (unattended) {
       if (active.get(current.name) !== current) return
-      active.delete(current.name)
     } else if (current.sessionId !== undefined) {
       if (passive.get(current.sessionId) !== current) return
       passive.delete(current.sessionId)
@@ -562,6 +564,8 @@ export function apply(ctx: Context, config: Config): void {
         if (thread.threadRuns >= limit) await rotate(folder, `after ${String(thread.threadRuns)} runs`)
       }
     }
+    // The routine stays busy until its thread maintenance is over: no run starts on a thread being compacted or rotated.
+    if (unattended) active.delete(current.name)
     pump()
   }
 
@@ -604,15 +608,18 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   const pump = (): void => {
-    while (active.size < config.maxConcurrent && queue.length > 0) {
-      const next = queue.shift()
+    while (active.size < config.maxConcurrent) {
+      const index = queue.findIndex(item => !active.has(item.name))
+      if (index === -1) break
+      const [next] = queue.splice(index, 1)
       if (next === undefined) break
       void start(next).catch((error: unknown) => { ctx.logger.warn(`vesta-routines: start ${next.name} failed: ${String(error)}`) })
     }
   }
 
+  /** Queue one run; a routine already queued is refused, one that is running gets its next run queued. */
   const enqueue = (routineName: string, trigger: Trigger, info: string, front: boolean): 'queued' | 'busy' => {
-    if (active.has(routineName) || queue.some(item => item.name === routineName)) return 'busy'
+    if (queue.some(item => item.name === routineName)) return 'busy'
     const item: Queued = { name: routineName, trigger, info }
     if (front) queue.unshift(item)
     else queue.push(item)
@@ -921,7 +928,7 @@ export function apply(ctx: Context, config: Config): void {
     if (folder.routine === undefined) return new Response(`the definition has problems: ${folder.errors.join('; ')}`, { status: 400 })
     const info = typeof body['info'] === 'string' ? body['info'].trim().slice(0, 4000) : ''
     const state = enqueue(folder.name, 'manual', info, true)
-    if (state === 'busy') return new Response('busy: a run is active or queued', { status: 409 })
+    if (state === 'busy') return new Response('busy: a run is already queued', { status: 409 })
     return Response.json({ ok: true, queued: queue.length })
   }
 
