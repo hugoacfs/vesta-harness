@@ -543,7 +543,8 @@ export function apply(ctx: Context, config: Config): void {
       if (outcome === 'timeout') {
         try { await ctx.sessionController.close(current.sessionId) } catch (error: unknown) { ctx.logger.warn(`vesta-routines: close after timeout: ${String(error)}`) }
       } else {
-        if ((current.inputTokens ?? 0) > config.compactAboveTokens) await compactThread(folder, current.sessionId)
+        const compactAbove = current.routine.compactAboveTokens ?? config.compactAboveTokens
+        if ((current.inputTokens ?? 0) > compactAbove) await compactThread(folder, current.sessionId)
         const limit = current.routine.rotateAfterRuns ?? config.rotateAfterRuns
         if (thread.threadRuns >= limit) await rotate(folder, `after ${String(thread.threadRuns)} runs`)
       }
@@ -797,6 +798,7 @@ export function apply(ctx: Context, config: Config): void {
       timeoutMinutes: routine?.timeoutMinutes,
       enabled: routine?.enabled ?? false,
       rotateAfterRuns: routine?.rotateAfterRuns,
+      compactAboveTokens: routine?.compactAboveTokens,
       paused: thread.paused === true,
       nextRun: live ? next : undefined,
       lastRunAt: thread.lastRunAt,

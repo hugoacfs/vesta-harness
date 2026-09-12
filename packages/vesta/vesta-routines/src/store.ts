@@ -72,6 +72,9 @@ export function validateRoutine(folderName: string, parsed: unknown, defaultTime
   const rotateRaw = record['rotateAfterRuns']
   const rotateAfterRuns = rotateRaw === undefined || rotateRaw === '' ? undefined : Number(rotateRaw)
   if (rotateAfterRuns !== undefined && (!Number.isInteger(rotateAfterRuns) || rotateAfterRuns < 1)) problems.push('rotateAfterRuns must be a positive integer')
+  const compactRaw = record['compactAboveTokens']
+  const compactAboveTokens = compactRaw === undefined || compactRaw === '' ? undefined : Number(compactRaw)
+  if (compactAboveTokens !== undefined && (!Number.isInteger(compactAboveTokens) || compactAboveTokens < 1)) problems.push('compactAboveTokens must be a positive integer')
   const enabled = record['enabled'] === undefined ? true : record['enabled'] === true
   if (problems.length > 0) return { errors: problems }
   return {
@@ -89,6 +92,7 @@ export function validateRoutine(folderName: string, parsed: unknown, defaultTime
       timeoutMinutes,
       enabled,
       ...(rotateAfterRuns === undefined ? {} : { rotateAfterRuns }),
+      ...(compactAboveTokens === undefined ? {} : { compactAboveTokens }),
     },
   }
 }
@@ -157,6 +161,7 @@ export async function writeRoutine(dir: string, routine: Routine): Promise<void>
     timeoutMinutes: routine.timeoutMinutes,
     enabled: routine.enabled,
     ...(routine.rotateAfterRuns === undefined ? {} : { rotateAfterRuns: routine.rotateAfterRuns }),
+    ...(routine.compactAboveTokens === undefined ? {} : { compactAboveTokens: routine.compactAboveTokens }),
   }, { lineWidth: -1, quotingType: '"' })
   await writeFile(join(dir, ROUTINE_FILE), body)
 }

@@ -30,6 +30,7 @@ export interface Routine {
   readonly timeoutMinutes: number
   readonly enabled: boolean
   readonly rotateAfterRuns?: number
+  readonly compactAboveTokens?: number
 }
 
 /** One archived thread. */
