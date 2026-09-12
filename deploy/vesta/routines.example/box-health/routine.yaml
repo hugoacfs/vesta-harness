@@ -1,0 +1,18 @@
+# One routine = one folder. The thread (a hidden session on the vesta-routine preset)
+# is created at the first run in `workspace`, at `permission`, and kept across runs.
+name: box-health
+title: Box health
+schedule: "30 6 * * *"            # five-field cron, server local time; or  at: 2026-12-31T23:00:00  ; or neither (manual and events only)
+workspace: /home/hugo
+permission: read-only             # required: read-only | workspace-write | danger-full-access
+reasoning: xhigh                  # optional: off | xhigh (default xhigh)
+brief: |
+  Check this server: disk space on / and /srv/ai, docker containers that are not healthy,
+  systemd --user units that failed, and free memory. Compare with your notes from earlier
+  runs. Tell Hugo only if something is unhealthy, a failed unit is new, or / grew more than
+  10 % since the last run; otherwise stay silent. Keep today's figures in your notes.
+notify: agent                     # always | failure | never | agent (a final "NOTIFY: …" line decides)
+timeoutMinutes: 20
+enabled: false
+# rotateAfterRuns: 100            # archive the thread after this many runs (default from the bundle)
+# compactAboveTokens: 24000       # compact after a run whose last request passed this (default from the bundle)

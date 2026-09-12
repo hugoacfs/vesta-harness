@@ -1,0 +1,12 @@
+name: morning-brief
+title: Morning brief
+schedule: "0 7 * * 1-5"
+workspace: /home/hugo/workspace/research
+permission: read-only
+brief: |
+  Summarise the overnight news on the topics listed in ~/workspace/research/topics.md in
+  ten lines with sources. Skip stories you already covered in earlier runs (your notes list
+  them); add today's stories to the notes. If the file does not exist, say so and stop.
+notify: always
+timeoutMinutes: 20
+enabled: false

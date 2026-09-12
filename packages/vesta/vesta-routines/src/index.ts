@@ -748,7 +748,16 @@ export function apply(ctx: Context, config: Config): void {
       importErrors = [`import of ${legacyFile} failed: ${String(error)}`]
     }
     const folders = await load()
-    for (const folder of folders) await threadOf(folder)
+    for (const folder of folders) {
+      const thread = await threadOf(folder)
+      if (thread.lastOutcome === 'started') {
+        // A run was in flight when the process stopped; nothing can finish it now.
+        thread.lastOutcome = 'aborted'
+        thread.lastRunSummary = 'aborted: the harness restarted during the run'
+        await saveThread(folder)
+        ctx.logger.warn(`vesta-routines: ${folder.name}: run ${String(thread.runs)} was in flight at the last stop; marked aborted`)
+      }
+    }
     booted = true
     ctx.logger.info(`vesta-routines: ${String(folders.length)} routine(s) in ${root}, ${String(sessionToRoutine.size)} thread(s)`)
   }
