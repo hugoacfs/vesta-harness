@@ -1,0 +1,3 @@
+# @deepseek-ai/dsh-vesta-routine-tools
+
+Vesta fork, a preset row (roadmap R8, 2026-09-12). Registers `routine_note` in the preset realm it is mounted in (`deploy/vesta/agent-presets/vesta-routine`). The tool resolves the calling session to its routine through the `vestaRoutines` host service provided by `@deepseek-ai/dsh-vesta-routines`, then reads, appends to or replaces that routine's `notes.md`. The notes live in the routine's folder, outside the workspace and the sandbox, so a read-only routine can still keep them. Over the cap (`notesMaxBytes`, 16 KB) the call fails with a message asking the model to condense. Outside a routine thread the tool answers that it keeps nothing.

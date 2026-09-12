@@ -67,6 +67,8 @@
       name: '@deepseek-ai/dsh-vesta-notify'
       config:
         linkBase: https://vesta.tail22b555.ts.net/harness/
+        # Incognito keeps quiet; routine threads report through vesta-routines instead.
+        excludePresets: [vesta-incognito, vesta-routine]
 
     # ── sessions: archived list, restore, delete-for-good (exported first) ─
     # Host half of the Archived panel. A deleted session is tarred into
@@ -116,8 +118,17 @@
     # time, reported on Telegram. State and history beside the file.
     - id: vesta-routines
       name: '@deepseek-ai/dsh-vesta-routines'
+      # v2 (roadmap R8–R11, 2026-09-12): one folder and one hidden thread per
+      # routine under $DSH_HOME/routines/<name>/ on the vesta-routine preset;
+      # the v1 routines.yaml is imported once. Compaction after a run whose last
+      # request passed compactAboveTokens; rotation into archive/ after
+      # rotateAfterRuns runs; runs queue one at a time.
       config:
         linkBase: https://vesta.tail22b555.ts.net/harness/
+        preset: vesta-routine
+        compactAboveTokens: 24000
+        rotateAfterRuns: 100
+        maxConcurrent: 1
 
     # ── roadmap T7 (2026-09-12): persistent terminals ───────────────────────
     # The PTY seam and its bash backend (upstream mounts them only in the

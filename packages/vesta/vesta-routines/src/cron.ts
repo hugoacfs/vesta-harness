@@ -100,3 +100,55 @@ export function cronNext(schedule: CronSchedule, from: Date): Date | undefined {
   }
   return undefined
 }
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+function clock(minute: string, hour: string): string | undefined {
+  if (!/^\d{1,2}$/u.test(minute) || !/^\d{1,2}$/u.test(hour)) return undefined
+  return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
+}
+
+function dayList(field: string): string | undefined {
+  const names: string[] = []
+  for (const part of field.split(',')) {
+    const lower = part.toLowerCase()
+    const named = DAYS[lower]
+    const value = named ?? Number(part)
+    if (!Number.isInteger(value) || value < 0 || value > 7) return undefined
+    names.push(DAY_NAMES[value === 7 ? 0 : value] ?? part)
+  }
+  return names.join(', ')
+}
+
+/**
+ * A short English reading of the common shapes of a five-field cron
+ * expression; anything else comes back as the expression itself.
+ * @param expression - the cron expression.
+ * @returns e.g. "weekdays at 07:00", "every 15 minutes", "monthly on day 1 at 09:00".
+ */
+export function describeCron(expression: string): string {
+  const fields = expression.trim().split(/\s+/u)
+  if (fields.length !== 5) return expression
+  const [minute = '', hour = '', dom = '', month = '', dow = ''] = fields
+  if (month !== '*') return expression
+  const time = clock(minute, hour)
+  if (dom === '*' && dow === '*') {
+    if (minute === '*' && hour === '*') return 'every minute'
+    const everyMinutes = /^\*\/(\d+)$/u.exec(minute)
+    if (everyMinutes !== null && hour === '*') return `every ${everyMinutes[1] ?? ''} minutes`
+    const everyHours = /^\*\/(\d+)$/u.exec(hour)
+    if (everyHours !== null && /^\d{1,2}$/u.test(minute)) return `every ${everyHours[1] ?? ''} hours at :${minute.padStart(2, '0')}`
+    if (hour === '*' && /^\d{1,2}$/u.test(minute)) return `hourly at :${minute.padStart(2, '0')}`
+    if (time !== undefined) return `daily at ${time}`
+    return expression
+  }
+  if (time === undefined) return expression
+  if (dom === '*') {
+    if (dow === '1-5') return `weekdays at ${time}`
+    if (dow === '0,6' || dow === '6,0' || dow === '6,7') return `weekends at ${time}`
+    const days = dayList(dow)
+    return days === undefined ? expression : `${days} at ${time}`
+  }
+  if (dow === '*' && /^\d{1,2}$/u.test(dom)) return `monthly on day ${dom} at ${time}`
+  return expression
+}

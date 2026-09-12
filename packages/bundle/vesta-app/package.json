@@ -48,6 +48,7 @@
     "@deepseek-ai/dsh-vesta-incognito": "workspace:^",
     "@deepseek-ai/dsh-vesta-modes": "workspace:^",
     "@deepseek-ai/dsh-vesta-notify": "workspace:^",
+    "@deepseek-ai/dsh-vesta-routine-tools": "workspace:^",
     "@deepseek-ai/dsh-vesta-routines": "workspace:^",
     "@deepseek-ai/dsh-vesta-sessions": "workspace:^",
     "@deepseek-ai/dsh-vesta-voice": "workspace:^"

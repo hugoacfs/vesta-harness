@@ -16,6 +16,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-workspace'
+import type {} from '@deepseek-ai/dsh-vesta-routines/types'
 import z from '@deepseek-ai/schemastery'
 
 export const name = 'vesta-sessions'
@@ -111,9 +112,11 @@ export function apply(ctx: Context, config: Config): void {
 
   const archived = async (): Promise<Response> => {
     const ids = new Set<string>(registry.archivedSessionIds)
+    // Routine threads are archived by design and belong to the Routines page.
+    const threads = ctx.get('vestaRoutines')?.threadSessionIds()
     const { items } = await controller.list({}, new AbortController().signal)
     const rows: ArchivedSession[] = items
-      .filter(item => ids.has(item.sessionId))
+      .filter(item => ids.has(item.sessionId) && !(threads?.has(item.sessionId) ?? false))
       .map((item) => {
         const title: unknown = item.projections?.values.title
         return {

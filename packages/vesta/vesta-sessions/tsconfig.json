@@ -1,12 +1,30 @@
 {
   "extends": "../../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
-  "include": ["src"],
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../../../vendor/cordis" },
-    { "path": "../../api/session-controller/tsconfig.host.json" },
-    { "path": "../../core/session" },
-    { "path": "../../util/home-paths" },
-    { "path": "../../workspace/workspace" }
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.host.json"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../workspace/workspace"
+    },
+    {
+      "path": "../vesta-routines"
+    }
   ]
 }
