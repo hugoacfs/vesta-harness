@@ -34,6 +34,7 @@ import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import { scopeChainOf } from '@deepseek-ai/dsh-scope'
 import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-vesta-memory-notes'
 import type {} from '@deepseek-ai/dsh-vesta-tool-restrict'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -416,6 +417,8 @@ export function apply(ctx: Context, config: Config): void {
     // Tool groups on demand (engine-fit E2): a keyword in the message wakes a dormant group before the turn.
     const woken = ctx.get('vestaToolGroups')?.autoEnable(session.id, text) ?? []
     if (woken.length > 0) ctx.logger.info(`vesta-modes: ${session.id}: tool groups enabled by keyword: ${woken.join(', ')}`)
+    // Memory recall (roadmap T13): the message is searched in the store and the best notes rendered for this session.
+    await ctx.get('vestaMemoryNotes')?.beforePrompt(session.id, text)
     if (!auto.enabled) return agent
     const composed = ctx.agentPresets.composedPreset(agent.ctx) ?? session.header.agentPreset
     if (composed !== auto.preset || hasTurn(session)) return agent

@@ -146,6 +146,24 @@
     - id: vesta-incognito
       name: '@deepseek-ai/dsh-vesta-incognito'
 
+    # ── roadmap T13 (2026-09-17): automatic memory notes ───────────────────
+    # Capture after idle turns (every 4 user turns) and on close or archive:
+    # one short model call proposes at most 3 durable notes, deduplicated through
+    # memory_search, written to the memory MCP tagged as auto-captured, logged to
+    # $DSH_HOME/memory-notes.log.jsonl. Recall before every prompt renders the best
+    # notes as the vesta:memory-recall section. Incognito, routine and Batch
+    # sessions are never captured. /memory shows, pauses or forgets.
+    - id: vesta-memory-notes
+      name: '@deepseek-ai/dsh-vesta-memory-notes'
+      config:
+        excludePresets: [vesta-incognito, vesta-routine, vesta-batch]
+        idleSeconds: 30
+        everyTurns: 4
+        maxPerPass: 3
+        maxPerSession: 6
+        dailyCap: 20
+        minConfidence: 0.7
+
     # ── roadmap T12 v2 (2026-09-17): Batch mode's lean tool surface ─────────
     # Agents of vesta-batch see only these tools (plus per-agent reminders), so the
     # PTC SDK stays small. Applied per agent at creation; see the package README.

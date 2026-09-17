@@ -1,7 +1,7 @@
 {
-  "name": "@deepseek-ai/dsh-vesta-modes",
-  "description": "Vesta modes: tier and reasoning per mode preset at session start, /mode soft switch, and Auto (first-message routing to a mode)",
-  "version": "0.6.0",
+  "name": "@deepseek-ai/dsh-vesta-memory-notes",
+  "description": "Vesta host plugin: automatic memory capture after idle turns and recall before every prompt, over the memory MCP",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -23,25 +23,19 @@
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-agent-default-model": "workspace:^",
     "@deepseek-ai/dsh-agent-presets": "workspace:^",
-    "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-commands": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-permission-presets": "workspace:^",
     "@deepseek-ai/dsh-scope": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-storage-domain": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-vesta-memory-notes": "workspace:^",
-    "@deepseek-ai/dsh-vesta-tool-restrict": "workspace:^",
-    "@deepseek-ai/schemastery": "workspace:^",
-    "js-yaml": "^4.2.0"
+    "@deepseek-ai/schemastery": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@types/js-yaml": "^4.0.9"
+    "@deepseek-ai/cordis": "workspace:^"
   }
 }

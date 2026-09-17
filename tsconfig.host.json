@@ -305,6 +305,7 @@
     { "path": "./packages/vesta/vesta-modes" },
     { "path": "./packages/vesta/vesta-incognito" },
     { "path": "./packages/vesta/vesta-routine-tools" },
+    { "path": "./packages/vesta/vesta-memory-notes" },
     { "path": "./packages/vesta/vesta-routines" },
     { "path": "./packages/vesta/vesta-tool-restrict" },
     { "path": "./packages/boot/app-boot" },

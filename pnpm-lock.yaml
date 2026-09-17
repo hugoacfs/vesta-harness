@@ -1817,6 +1817,9 @@ importers:
       '@deepseek-ai/dsh-vesta-incognito':
         specifier: workspace:^
         version: link:../../vesta/vesta-incognito
+      '@deepseek-ai/dsh-vesta-memory-notes':
+        specifier: workspace:^
+        version: link:../../vesta/vesta-memory-notes
       '@deepseek-ai/dsh-vesta-modes':
         specifier: workspace:^
         version: link:../../vesta/vesta-modes
@@ -10761,6 +10764,46 @@ importers:
         specifier: workspace:^
         version: link:../../../vendor/cordis
 
+  packages/vesta/vesta-memory-notes:
+    dependencies:
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-agent-default-model':
+        specifier: workspace:^
+        version: link:../../core/agent-default-model
+      '@deepseek-ai/dsh-agent-presets':
+        specifier: workspace:^
+        version: link:../../preset/agent-presets
+      '@deepseek-ai/dsh-commands':
+        specifier: workspace:^
+        version: link:../../interaction/commands
+      '@deepseek-ai/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../../util/home-paths
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-scope':
+        specifier: workspace:^
+        version: link:../../core/scope
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
   packages/vesta/vesta-modes:
     dependencies:
       '@deepseek-ai/dsh-agent':
@@ -10799,6 +10842,9 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+      '@deepseek-ai/dsh-vesta-memory-notes':
+        specifier: workspace:^
+        version: link:../vesta-memory-notes
       '@deepseek-ai/dsh-vesta-tool-restrict':
         specifier: workspace:^
         version: link:../vesta-tool-restrict
