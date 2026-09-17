@@ -125,6 +125,8 @@ interface SessionState {
   running: boolean
   timer?: ReturnType<typeof setTimeout> | undefined
   recallKey?: string
+  /** Note names the session wrote through the memory tools itself; capture leaves those subjects alone. */
+  readonly ownWrites: Set<string>
 }
 
 interface Candidate {
@@ -140,6 +142,8 @@ interface StoreHit {
   readonly description: string
   readonly scope?: string
   readonly updated?: string
+  readonly score?: number
+  readonly content?: string
 }
 
 const NAME = /^[a-z0-9][a-z0-9-]{1,63}$/u
@@ -179,13 +183,22 @@ function parseHits(text: string): StoreHit[] {
         ?? (parsed as { notes?: unknown }).notes ?? (parsed as { hits?: unknown }).hits
     if (!Array.isArray(list)) return []
     return list
-      .map(item => item as { name?: unknown; description?: unknown; scope?: unknown; updated?: unknown })
+      .map(item => item as {
+        name?: unknown
+        description?: unknown
+        scope?: unknown
+        updated?: unknown
+        score?: unknown
+        content?: unknown
+      })
       .filter(item => typeof item.name === 'string')
       .map(item => ({
         name: item.name as string,
         description: typeof item.description === 'string' ? item.description : '',
         ...(typeof item.scope === 'string' ? { scope: item.scope } : {}),
         ...(typeof item.updated === 'string' ? { updated: item.updated } : {}),
+        ...(typeof item.score === 'number' ? { score: item.score } : {}),
+        ...(typeof item.content === 'string' ? { content: item.content } : {}),
       }))
   } catch {
     return []
@@ -221,7 +234,9 @@ function parseCandidates(text: string, limit: number): Candidate[] {
 }
 
 function tokens(text: string): Set<string> {
-  return new Set(text.toLowerCase().replace(/[^a-z0-9 ]+/gu, ' ').split(/\s+/u).filter(word => word.length > 3))
+  return new Set(
+    text.toLowerCase().replace(/[^a-z0-9 ]+/gu, ' ').split(/\s+/u).filter(word => word.length > 3).map(word => word.replace(/(ies|es|s)$/u, '')),
+  )
 }
 
 function overlap(a: string, b: string): number {
@@ -282,7 +297,9 @@ export function apply(ctx: Context, config: Config): void {
     if (known !== undefined) return known
     const preset = eligible(session)
     if (preset === undefined) return undefined
-    const created: SessionState = { preset, cwd: session.header.cwd, pending: '', userTurns: 0, written: 0, paused: false, running: false }
+    const created: SessionState = {
+      preset, cwd: session.header.cwd, pending: '', userTurns: 0, written: 0, paused: false, running: false, ownWrites: new Set(),
+    }
     states.set(session.id, created)
     return created
   }
@@ -328,6 +345,31 @@ export function apply(ctx: Context, config: Config): void {
     return parseCandidates(text, config.maxPerPass)
   }
 
+  /** Ask the model whether a candidate is about the same subject as one of the search hits; returns the hit's name or undefined. */
+  const judgeMatch = async (candidate: Candidate, hits: StoreHit[]): Promise<string | undefined> => {
+    if (hits.length === 0) return undefined
+    const route = ctx.get('agentDefaultModel')?.currentSelection()
+    if (route === undefined) return undefined
+    const listing = hits.map(hit => `- ${hit.name}: ${hit.description}`).join('\n')
+    const options: GenerateOptions = {
+      provider: route.provider,
+      model: route.model,
+      reasoningEffort: ReasoningEffortId('off'),
+      system: 'You decide whether a new memory note is about the same subject as an existing one. Answer with the existing note\'s exact name, or NEW. Nothing else.',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: `Existing notes:\n${listing}\n\nNew note: ${candidate.name}: ${candidate.description}\n${candidate.content.slice(0, 400)}` }],
+        source: { kind: 'plugin', plugin: 'vesta-memory-notes' },
+      })],
+      temperature: 0,
+      maxTokens: 24,
+      signal: AbortSignal.timeout(20000),
+    }
+    const assembler = new BlockAssembler()
+    for await (const chunk of ctx.llm.stream(options)) assembler.push(chunk)
+    const answer = assembler.blocks().map(block => (block.type === 'text' ? block.text : '')).join(' ').trim().toLowerCase()
+    return hits.find(hit => answer.includes(hit.name.toLowerCase()))?.name
+  }
+
   const extract = async (sessionId: string, state: SessionState, reason: string): Promise<{ written: number; skipped: number }> => {
     if (state.running || state.paused) return { written: 0, skipped: 0 }
     state.running = true
@@ -354,8 +396,22 @@ export function apply(ctx: Context, config: Config): void {
           await log({ session: sessionId, preset: state.preset, reason, action: 'skipped', name: candidate.name, confidence: candidate.confidence })
           continue
         }
-        const hits = await search(candidate.description, 3)
-        const match = hits.find(hit => hit.name === candidate.name || overlap(hit.description, candidate.description) >= 0.6)
+        if (state.ownWrites.has(candidate.name)) {
+          skipped += 1
+          await log({ session: sessionId, preset: state.preset, reason, action: 'skipped', name: candidate.name, detail: 'written by the session itself' })
+          continue
+        }
+        const hits = await search(candidate.description, 4)
+        let match = hits.find(hit => hit.name === candidate.name || overlap(hit.description, candidate.description) >= 0.6)
+        if (match === undefined && hits.length > 0) {
+          const judged = await judgeMatch(candidate, hits)
+          match = judged === undefined ? undefined : hits.find(hit => hit.name === judged)
+        }
+        if (match !== undefined && state.ownWrites.has(match.name)) {
+          skipped += 1
+          await log({ session: sessionId, preset: state.preset, reason, action: 'skipped', name: match.name, detail: 'written by the session itself' })
+          continue
+        }
         const date = today()
         let noteName = candidate.name
         let content: string
@@ -363,6 +419,11 @@ export function apply(ctx: Context, config: Config): void {
         if (match !== undefined) {
           noteName = match.name
           const existing = bodyOf(await readNote(match.name))
+          if (overlap(existing, candidate.content) >= 0.7) {
+            skipped += 1
+            await log({ session: sessionId, preset: state.preset, reason, action: 'skipped', name: match.name, detail: 'nothing new' })
+            continue
+          }
           content = `${existing}\n\n**Update (${date}, auto-captured by Vesta):** ${candidate.content}`
           action = 'updated'
         } else {
@@ -438,6 +499,14 @@ export function apply(ctx: Context, config: Config): void {
     }
     if (record.type === 'tool/call') {
       remember(state, `[tool ${data?.name ?? '?'} ${(data?.arguments ?? '').slice(0, 160)}]`)
+      if (data?.name === 'mcp__memory__memory_write' || data?.name === 'memory_write') {
+        try {
+          const args = JSON.parse(data.arguments ?? '{}') as { name?: unknown }
+          if (typeof args.name === 'string') state.ownWrites.add(args.name)
+        } catch {
+          // unparsable arguments: nothing to record
+        }
+      }
       return
     }
     if (record.type === 'turn/end') schedule(session.id, state)
@@ -480,7 +549,11 @@ export function apply(ctx: Context, config: Config): void {
     if (session === undefined) return
     const state = stateOf(session)
     if (state === undefined || !config.recall || text.trim().length < 12) return
-    const hits = await search(text, config.recallLimit)
+    const found = await search(text, config.recallLimit + 2)
+    const top = found[0]?.score
+    const hits = top === undefined
+      ? found.slice(0, config.recallLimit)
+      : found.filter(hit => hit.score !== undefined && hit.score >= top * 0.5).slice(0, config.recallLimit)
     const key = hits.map(hit => hit.name).join('|')
     if (key === state.recallKey) return
     state.recallKey = key
