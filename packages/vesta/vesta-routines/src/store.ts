@@ -62,6 +62,8 @@ export function validateRoutine(folderName: string, parsed: unknown, defaultTime
   if (permission === undefined || !PERMISSION.has(permission)) problems.push('permission is required: read-only, workspace-write or danger-full-access')
   const reasoning = text(record['reasoning'])
   if (reasoning !== undefined && !REASONING.has(reasoning)) problems.push('reasoning must be off or xhigh')
+  const preset = text(record['preset'])
+  if (preset !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(preset)) problems.push('preset must be a preset id (lowercase letters, digits, dashes)')
   const brief = text(record['brief'])
   if (brief === undefined) problems.push('brief is required')
   const notify = text(record['notify']) ?? 'agent'
@@ -87,6 +89,7 @@ export function validateRoutine(folderName: string, parsed: unknown, defaultTime
       workspace: workspace as string,
       permission: permission as Permission,
       ...(reasoning === undefined ? {} : { reasoning: reasoning as 'off' | 'xhigh' }),
+      ...(preset === undefined ? {} : { preset }),
       brief: brief as string,
       notify: notify as Notify,
       timeoutMinutes,
@@ -156,6 +159,7 @@ export async function writeRoutine(dir: string, routine: Routine): Promise<void>
     workspace: routine.workspace,
     permission: routine.permission,
     ...(routine.reasoning === undefined ? {} : { reasoning: routine.reasoning }),
+    ...(routine.preset === undefined ? {} : { preset: routine.preset }),
     brief: routine.brief,
     notify: routine.notify,
     timeoutMinutes: routine.timeoutMinutes,

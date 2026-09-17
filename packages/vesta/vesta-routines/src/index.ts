@@ -400,7 +400,7 @@ export function apply(ctx: Context, config: Config): void {
       thread.threadRuns = 0
     }
     await ctx.workspaceRegistry.create(routine.workspace)
-    const { sessionId } = await ctx.sessionController.create({ cwd: routine.workspace, agentPreset: config.preset })
+    const { sessionId } = await ctx.sessionController.create({ cwd: routine.workspace, agentPreset: routine.preset ?? config.preset })
     sessionToRoutine.set(sessionId, folder.name)
     thread.sessionId = sessionId
     thread.createdAt = new Date().toISOString()
@@ -812,6 +812,7 @@ export function apply(ctx: Context, config: Config): void {
       workspace: routine?.workspace,
       permission: routine?.permission,
       reasoning: routine?.reasoning ?? 'xhigh',
+      preset: routine?.preset ?? config.preset,
       notify: routine?.notify,
       timeoutMinutes: routine?.timeoutMinutes,
       enabled: routine?.enabled ?? false,

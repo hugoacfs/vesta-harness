@@ -107,11 +107,18 @@
           vesta-incognito: { label: Incognito, permission: read-only, reasoning: 'off', switchable: false }
           # Auto (roadmap M5): read-only until the first message is routed to a real mode.
           vesta-auto: { label: Auto, permission: read-only, reasoning: xhigh, switchable: false }
+          # Batch (roadmap T12 v2): code mode, never Auto-routed, not a /mode target.
+          vesta-batch: { label: Batch, permission: workspace-write, reasoning: medium, switchable: false }
         auto:
           enabled: true
           preset: vesta-auto
           fallback: vesta-ops
           timeoutMs: 8000
+        # run_code is refused below workspace-write; a Batch session cannot be /mode-switched below it.
+        ptc:
+          guard: true
+          tiers: [workspace-write, danger-full-access]
+          presets: [vesta-batch]
 
     # ── incognito (roadmap M4, 2026-09-11) ─────────────────────────────────
     # Sessions on the vesta-incognito preset: memory writes refused, title pinned,

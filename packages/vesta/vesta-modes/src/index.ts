@@ -83,6 +83,8 @@ export interface PtcConfig {
   tool: string
   /** Permission tiers that may run model code. @default ['workspace-write', 'danger-full-access'] */
   tiers: string[]
+  /** Presets whose only tool surface is `run_code`; `/mode` refuses to move them below `tiers`. @default [] */
+  presets: string[]
 }
 
 export interface Config {
@@ -93,7 +95,7 @@ export interface Config {
   ptc: PtcConfig
 }
 
-const DEFAULT_PTC: PtcConfig = { guard: true, tool: 'run_code', tiers: ['workspace-write', 'danger-full-access'] }
+const DEFAULT_PTC: PtcConfig = { guard: true, tool: 'run_code', tiers: ['workspace-write', 'danger-full-access'], presets: [] }
 
 const DEFAULT_CHOICES = ['vesta-ops', 'vesta-build', 'vesta-research', 'vesta-companion']
 const DEFAULT_DESCRIPTIONS: Record<string, string> = {
@@ -128,6 +130,7 @@ export const Config: z<Config> = z.object({
     guard: z.boolean().default(true),
     tool: z.string().default('run_code'),
     tiers: z.array(z.string()).default(DEFAULT_PTC.tiers),
+    presets: z.array(z.string()).default([]),
   }).default(DEFAULT_PTC),
 })
 
@@ -179,6 +182,7 @@ async function personaOf(preset: string): Promise<string | undefined> {
 export function apply(ctx: Context, config: Config): void {
   const overridesFile = config.overridesFile === '' ? dshHomePath('mode-overrides.json') : config.overridesFile
   const overrides = new Map<string, string>()
+  const ptc: PtcConfig = { ...DEFAULT_PTC, ...config.ptc }
   const personas = new Map<string, { mtimeMs: number; text: string | undefined }>()
 
   const loadOverrides = async (): Promise<void> => {
@@ -291,6 +295,14 @@ export function apply(ctx: Context, config: Config): void {
     if (mode.switchable === false) {
       return { kind: 'error', text: `${mode.label ?? preset} cannot be switched to mid-session; start a new session in that mode.` }
     }
+    const composed = ctx.agentPresets.composedPreset(invocation.agent.ctx) ?? session.header.agentPreset
+    if (composed !== undefined && ptc.presets.includes(composed) && mode.permission !== undefined && !ptc.tiers.includes(mode.permission)) {
+      const from = config.modes[composed]?.label ?? composed
+      return {
+        kind: 'error',
+        text: `${from} sessions work only through ${ptc.tool}, which is refused at the ${mode.permission} tier; start a new session in ${mode.label ?? preset} instead.`,
+      }
+    }
     await applySettings(session, preset)
     if (preset === session.header.agentPreset) {
       overrides.delete(session.id)
@@ -402,7 +414,6 @@ export function apply(ctx: Context, config: Config): void {
   // PTC guard (roadmap T12): model code in the worker runs with the harness's own
   // authority, outside the bash sandbox, so the transport tool is refused below the
   // configured tiers; the model reads the reason and falls back to direct calls.
-  const ptc: PtcConfig = { ...DEFAULT_PTC, ...config.ptc }
   if (ptc.guard) {
     ctx.effect(() => ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
       if (exec.name !== ptc.tool) return next()

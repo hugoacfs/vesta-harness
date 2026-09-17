@@ -1,0 +1,2 @@
+name: Batch
+description: 'Code mode for multi-step jobs: one run_code program at a time over a lean tool set, digests instead of dumps. Workspace-write, medium reasoning. Not for chat.'

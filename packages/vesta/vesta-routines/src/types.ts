@@ -25,6 +25,8 @@ export interface Routine {
   readonly workspace: string
   readonly permission: Permission
   readonly reasoning?: 'off' | 'xhigh'
+  /** The agent preset of the thread; empty = the plugin's default (`vesta-routine`). */
+  readonly preset?: string
   readonly brief: string
   readonly notify: Notify
   readonly timeoutMinutes: number

@@ -25,6 +25,7 @@ interface Item {
   readonly workspace?: string
   readonly permission?: string
   readonly reasoning: string
+  readonly preset?: string
   readonly notify?: string
   readonly timeoutMinutes?: number
   readonly enabled: boolean
@@ -85,6 +86,7 @@ interface FormState {
   readonly workspace: string
   readonly permission: string
   readonly reasoning: string
+  readonly preset: string
   readonly notify: string
   readonly timeoutMinutes: string
   readonly rotateAfterRuns: string
@@ -108,7 +110,7 @@ const WEEKDAYS = ['1', '2', '3', '4', '5', '6', '0'] as const
 
 const EMPTY_FORM: FormState = {
   name: '', title: '', schedule: DEFAULT_SCHEDULE, workspace: '/home/hugo', permission: 'read-only', reasoning: 'xhigh',
-  notify: 'agent', timeoutMinutes: '30', rotateAfterRuns: '', compactAboveTokens: '', enabled: true, brief: '',
+  preset: 'vesta-routine', notify: 'agent', timeoutMinutes: '30', rotateAfterRuns: '', compactAboveTokens: '', enabled: true, brief: '',
 }
 
 async function getJson<T>(route: string): Promise<T> {
@@ -167,6 +169,7 @@ function formOf(detail: Detail): FormState {
     workspace: item.workspace ?? '',
     permission: item.permission ?? 'read-only',
     reasoning: item.reasoning,
+    preset: item.preset ?? 'vesta-routine',
     notify: item.notify ?? 'agent',
     timeoutMinutes: item.timeoutMinutes === undefined ? '30' : String(item.timeoutMinutes),
     rotateAfterRuns: item.rotateAfterRuns === undefined ? '' : String(item.rotateAfterRuns),
@@ -284,6 +287,7 @@ export function RoutinesPanel({ t, open }: RoutinesPanelProps) {
       workspace: form.workspace.trim(),
       permission: form.permission,
       reasoning: form.reasoning,
+      preset: form.preset,
       notify: form.notify,
       timeoutMinutes: Number(form.timeoutMinutes),
       enabled: form.enabled,
@@ -464,6 +468,7 @@ function DetailView(props: DetailViewProps) {
         <dt>{t('detail.workspace')}</dt><dd>{item.workspace ?? ''}</dd>
         <dt>{t('detail.permission')}</dt><dd>{item.permission ?? ''}</dd>
         <dt>{t('detail.reasoning')}</dt><dd>{item.reasoning}</dd>
+        <dt>{t('detail.preset')}</dt><dd>{item.preset ?? ''}</dd>
         <dt>{t('detail.notify')}</dt><dd>{item.notify ?? ''}</dd>
         <dt>{t('detail.timeout')}</dt><dd>{item.timeoutMinutes === undefined ? '' : String(item.timeoutMinutes)}</dd>
         <dt>{t('detail.runs')}</dt><dd>{runsValue}</dd>
@@ -628,6 +633,13 @@ function RoutineForm({ t, creating, form, busy, errors, onChange, onSave, onCanc
           <select className={css.input} value={form.reasoning} onChange={(event) => { set({ reasoning: event.target.value }) }}>
             <option value="xhigh">xhigh</option>
             <option value="off">off</option>
+          </select>
+        </label>
+        <label className={css.field}>
+          <span>{t('form.preset')}</span>
+          <select className={css.input} value={form.preset} onChange={(event) => { set({ preset: event.target.value }) }}>
+            <option value="vesta-routine">{t('form.preset.routine')}</option>
+            <option value="vesta-batch">{t('form.preset.batch')}</option>
           </select>
         </label>
         <label className={css.field}>

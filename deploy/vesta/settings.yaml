@@ -36,6 +36,8 @@ llm-pi-ai:
           maxTokens: 32768
           reasoningEfforts:
             off: null
+            # medium (roadmap T12 v2, 2026-09-17): the Batch mode thinks with the `medium` budget (8192).
+            medium: medium
             xhigh: xhigh
           compat:
             thinkingFormat: qwen-chat-template

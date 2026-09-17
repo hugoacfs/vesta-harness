@@ -306,6 +306,7 @@
     { "path": "./packages/vesta/vesta-incognito" },
     { "path": "./packages/vesta/vesta-routine-tools" },
     { "path": "./packages/vesta/vesta-routines" },
+    { "path": "./packages/vesta/vesta-tool-restrict" },
     { "path": "./packages/boot/app-boot" },
     { "path": "./packages/boot/cmdline" },
     { "path": "./packages/sdk/server" },

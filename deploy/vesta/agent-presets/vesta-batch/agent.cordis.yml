@@ -1,0 +1,117 @@
+# vesta-batch — the Batch mode (roadmap T12 v2, 2026-09-17): programmatic tool calling
+# with a lean tool set. The model's only tool is run_code; the generated SDK declares the
+# few tools below (shell, files, search over files, own-history search, routine notes) and
+# every host-global tool (MCP servers, reminders) is hidden by vesta-tool-restrict, so the
+# SDK stays small. Reasoning medium and the workspace-write tier come from vesta-modes.
+# Reached from New Session, from a routine's `preset: vesta-batch`, never by Auto.
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    # `prefix` (was `text` before the 0.1.5 sync): dsh-persona renders it as the
+    # deployment:persona-prefix section; the omitted `suffix` shadows the global one.
+    prefix: >-
+      You are Vesta in Batch mode, powered by the {{model}} model. Your working directory is {{cwd}}.
+
+      You work through programs: your only tool is run_code, whose code is the body of an async TypeScript
+      function calling the SDK bindings declared below (shell, files, search, session search, routine notes).
+      Plan the whole job first, then write one program that does as much of it as possible: gather with the
+      bindings, reduce in code, and print a digest of at most 40 lines — counts, tables, the lines that matter —
+      never a raw dump. Cut large outputs inside the program (head, tail, grep, counts) so the conversation
+      stays small. Return structured results (JSON or a table) when a later step will use them. Prefer a few
+      well-planned programs over many small ones; a program that fails tells you why in its result — fix the
+      program, do not repeat it unchanged.
+
+      Nobody answers questions during a batch: decide within the task, state your assumptions in the report,
+      and stop when the task is done. Verify results before reporting; never fake success — say FAILED plainly
+      with what you tried. Never put secrets or credentials in a program. When running as a routine, keep
+      facts the next run needs with the routine_note binding.
+
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# `shell-env` stays in the HOST composition. Both shell tools consume the host
+# registry from here; their executors (`bash-sandbox`/`pwsh-sandbox`) are
+# host-plane too.
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+# Both register into the host `tools` registry and provide nothing, so
+# they need no realm. The `fs` service and its policy stay in the host.
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# Search its own earlier sessions (roadmap T2, 2026-09-11): five read-only tools over
+# ctx.sessionQuery (search, matches, trace, event read); cross-session reads only within
+# the same cwd, so Ops history is reachable from Ops sessions.
+- id: tool-session-query
+  name: '@deepseek-ai/dsh-tool-session-query'
+
+# Routine notes at any tier (routine threads that choose this preset).
+- id: vesta-routine-tools
+  name: '@deepseek-ai/dsh-vesta-routine-tools'
+
+# Programmatic tool calling: only run_code plus the generated SDK.
+- id: tool-presentation
+  name: '@deepseek-ai/dsh-agent-tool-presentation'
+  config:
+    mode: ptc
+
+# Hide every host-global tool (MCP servers, reminders): the SDK declares only this preset's rows.
+- id: tool-restrict
+  name: '@deepseek-ai/dsh-vesta-tool-restrict'
+  config:
+    allow: []
+
+# Persistent terminals (roadmap T7, 2026-09-12): six PTY tools (open, send, read,
+# signal, close, list) over the host's terminal seam and bash backend; for
+# interactive processes and long sessions instead of polling background jobs.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+      # Tier-1 context discipline (2026-08-19): compact at 50% of the routed
+      # context window (default is 0.8) so working context stays well under the
+      # gateway cache and long writes keep headroom. retainRatio stays at its
+      # 0.16 default. Revert: remove this config block.
+      config:
+        thresholdRatio: 0.5
+        maxTokens: 16384
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── delegation and workflows ────────────────────────────────────────────────
+
+# The `subagents` registry and its spawn/fork backends live in the HOST
+# composition. This preset contributes the delegation TOOLS, pinned to the
+# vesta `default` lane (the `assistant` lane was retired 2026-09-06). `workflows` shares one entry-local realm here.

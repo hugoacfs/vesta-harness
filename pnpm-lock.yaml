@@ -1832,6 +1832,9 @@ importers:
       '@deepseek-ai/dsh-vesta-sessions':
         specifier: workspace:^
         version: link:../../vesta/vesta-sessions
+      '@deepseek-ai/dsh-vesta-tool-restrict':
+        specifier: workspace:^
+        version: link:../../vesta/vesta-tool-restrict
       '@deepseek-ai/dsh-vesta-voice':
         specifier: workspace:^
         version: link:../../vesta/vesta-voice
@@ -10914,6 +10917,19 @@ importers:
       '@deepseek-ai/dsh-workspace':
         specifier: workspace:^
         version: link:../../workspace/workspace
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
+  packages/vesta/vesta-tool-restrict:
+    dependencies:
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
