@@ -68,5 +68,5 @@ except Exception: notes=[]
 for n in notes:
     blob=(n.get(\"name\",\"\")+\" \"+n.get(\"description\",\"\")).lower()
     if \"t13\" in blob or \"bramble\" in blob: print(n[\"name\"])
-"); echo "  test notes in the store: ${names:-none}"; for n in $names; do call "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"memory_delete\",\"arguments\":{\"name\":\"$n\"}}}" | grep -o "\"deleted\": *true" | sed "s/^/  $n /"; done; rm -f /tmp/mh.txt'
+"); echo "  test notes in the store: ${names:-none}"; echo "$names" | while read -r n; do [ -z "$n" ] && continue; call "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"memory_delete\",\"arguments\":{\"name\":\"$n\"}}}" | grep -o "\"deleted\": *true" | sed "s/^/  $n /"; done; rm -f /tmp/mh.txt'
 echo "== done"
