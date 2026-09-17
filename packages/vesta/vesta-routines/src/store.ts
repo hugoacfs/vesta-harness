@@ -42,7 +42,15 @@ function text(value: unknown): string | undefined {
  * @param defaultTimeout - minutes for a routine that names none.
  * @returns the routine when valid, else the problems.
  */
-export function validateRoutine(folderName: string, parsed: unknown, defaultTimeout: number): { routine?: Routine; errors: string[] } {
+/** Deployment facts validation needs: the code-mode preset and the tiers it may run at. */
+export interface ValidationOptions {
+  readonly batchPreset?: string
+  readonly batchTiers?: readonly string[]
+}
+
+export function validateRoutine(
+  folderName: string, parsed: unknown, defaultTimeout: number, options: ValidationOptions = {},
+): { routine?: Routine; errors: string[] } {
   const record = (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : {}) as Record<string, unknown>
   const problems: string[] = []
   if (!NAME.test(folderName)) problems.push('name must be lowercase letters, digits and dashes (1-64)')
@@ -64,6 +72,9 @@ export function validateRoutine(folderName: string, parsed: unknown, defaultTime
   if (reasoning !== undefined && !REASONING.has(reasoning)) problems.push('reasoning must be off or xhigh')
   const preset = text(record['preset'])
   if (preset !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(preset)) problems.push('preset must be a preset id (lowercase letters, digits, dashes)')
+  if (preset !== undefined && preset === options.batchPreset && options.batchTiers !== undefined && permission !== undefined && !options.batchTiers.includes(permission)) {
+    problems.push(`the ${preset} preset works only through run_code, which needs ${options.batchTiers.join(' or ')}; raise the tier or pick another preset`)
+  }
   const brief = text(record['brief'])
   if (brief === undefined) problems.push('brief is required')
   const notify = text(record['notify']) ?? 'agent'
@@ -108,7 +119,7 @@ export function validateRoutine(folderName: string, parsed: unknown, defaultTime
  * @returns the folders, sorted by name.
  */
 export async function readFolders(
-  root: string, defaultTimeout: number, cache: ReadonlyMap<string, RoutineFolder>,
+  root: string, defaultTimeout: number, cache: ReadonlyMap<string, RoutineFolder>, options: ValidationOptions = {},
 ): Promise<RoutineFolder[]> {
   let names: string[]
   try {
@@ -138,7 +149,7 @@ export async function readFolders(
       folders.push({ name: folderName, dir, errors: [`${ROUTINE_FILE}: ${error instanceof Error ? error.message : String(error)}`], mtimeMs })
       continue
     }
-    const { routine, errors } = validateRoutine(folderName, parsed, defaultTimeout)
+    const { routine, errors } = validateRoutine(folderName, parsed, defaultTimeout, options)
     folders.push({ name: folderName, dir, ...(routine === undefined ? {} : { routine }), errors, mtimeMs })
   }
   return folders

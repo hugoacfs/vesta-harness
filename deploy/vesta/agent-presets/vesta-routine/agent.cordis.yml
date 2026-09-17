@@ -25,10 +25,6 @@
       never fake success. End every run with one line "Summary: …" and, only when the brief says Hugo must be told,
       a final line "NOTIFY: …" written for his phone.
 
-      For anything you need from the web, use the search MCP tools (mcp__search__*). To read an image file, call
-      mcp__vision__read_image with its absolute path. Telegram messages go out through the NOTIFY line, not by
-      calling a tool, unless the brief says otherwise.
-
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
@@ -162,8 +158,8 @@
     - id: tool-result-pruner
       name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
       config:
-        thresholdChars: 8192
-        headChars: 4096
+        thresholdChars: 6144
+        headChars: 3072
         tailChars: 1024
 
 # ── delegation and workflows ────────────────────────────────────────────────

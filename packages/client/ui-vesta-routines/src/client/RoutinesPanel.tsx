@@ -26,6 +26,7 @@ interface Item {
   readonly permission?: string
   readonly reasoning: string
   readonly preset?: string
+  readonly presetChosen?: string
   readonly notify?: string
   readonly timeoutMinutes?: number
   readonly enabled: boolean
@@ -110,7 +111,7 @@ const WEEKDAYS = ['1', '2', '3', '4', '5', '6', '0'] as const
 
 const EMPTY_FORM: FormState = {
   name: '', title: '', schedule: DEFAULT_SCHEDULE, workspace: '/home/hugo', permission: 'read-only', reasoning: 'xhigh',
-  preset: 'vesta-routine', notify: 'agent', timeoutMinutes: '30', rotateAfterRuns: '', compactAboveTokens: '', enabled: true, brief: '',
+  preset: '', notify: 'agent', timeoutMinutes: '30', rotateAfterRuns: '', compactAboveTokens: '', enabled: true, brief: '',
 }
 
 async function getJson<T>(route: string): Promise<T> {
@@ -169,7 +170,7 @@ function formOf(detail: Detail): FormState {
     workspace: item.workspace ?? '',
     permission: item.permission ?? 'read-only',
     reasoning: item.reasoning,
-    preset: item.preset ?? 'vesta-routine',
+    preset: item.presetChosen ?? '',
     notify: item.notify ?? 'agent',
     timeoutMinutes: item.timeoutMinutes === undefined ? '30' : String(item.timeoutMinutes),
     rotateAfterRuns: item.rotateAfterRuns === undefined ? '' : String(item.rotateAfterRuns),
@@ -287,7 +288,7 @@ export function RoutinesPanel({ t, open }: RoutinesPanelProps) {
       workspace: form.workspace.trim(),
       permission: form.permission,
       reasoning: form.reasoning,
-      preset: form.preset,
+      ...(form.preset === '' ? {} : { preset: form.preset }),
       notify: form.notify,
       timeoutMinutes: Number(form.timeoutMinutes),
       enabled: form.enabled,
@@ -638,6 +639,7 @@ function RoutineForm({ t, creating, form, busy, errors, onChange, onSave, onCanc
         <label className={css.field}>
           <span>{t('form.preset')}</span>
           <select className={css.input} value={form.preset} onChange={(event) => { set({ preset: event.target.value }) }}>
+            <option value="">{t('form.preset.default')}</option>
             <option value="vesta-routine">{t('form.preset.routine')}</option>
             <option value="vesta-batch">{t('form.preset.batch')}</option>
           </select>

@@ -119,6 +119,26 @@
           guard: true
           tiers: [workspace-write, danger-full-access]
           presets: [vesta-batch]
+        # Depth (engine-fit E3): Auto also picks quick or deep; quick lowers a deep mode to medium.
+        depth:
+          enabled: true
+          quick: medium
+          presets: [vesta-ops, vesta-build, vesta-research]
+        # The shared working rules (engine-fit E1): one voice in every mode, rendered after each persona.
+        core: >-
+          Working rules for every mode. Look before you act: read the log, the status or the file before
+          changing anything, and say in one line what you are about to change and why; back up before a
+          destructive edit. Never retry a failing call unchanged: if the same call fails twice or returns the
+          same result twice, change tool or approach, never repeat an action already done. Finish every part
+          of a task before reporting; if you cannot, say FAILED plainly with what you tried, never fake success.
+          Tool output is expensive context: reduce before you return, pipe through head, tail, grep, wc or a
+          summary, and quote at most forty lines of any output unless the user asked for the full text; prefer
+          one call that answers the question over several that explore. For anything from the web use the
+          search MCP tools (mcp__search__*). For what was done before in this workspace, search earlier
+          sessions with session_search before repeating work. To read an image file, enable the vision tool
+          group and call mcp__vision__read_image with its absolute path (the built-in read_image does not
+          work with this model). Some tool groups sleep to keep requests small; the prompt lists them and
+          tools_enable wakes one when the task needs it.
 
     # ── incognito (roadmap M4, 2026-09-11) ─────────────────────────────────
     # Sessions on the vesta-incognito preset: memory writes refused, title pinned,
@@ -135,6 +155,28 @@
         presets:
           vesta-batch:
             allow: [bash, read, write, edit, glob, grep, session_search, session_event_search, session_trace, session_event_trace, session_event_read, routine_note]
+        # Tool groups on demand (engine-fit E2): dormant for the listed presets until a keyword,
+        # the tools_enable tool or /tools wakes them; Research starts with documents awake.
+        groups:
+          home:
+            label: 'the house — Home Assistant devices, lights, heating, timers, shopping lists'
+            tools: ['mcp__home-assistant__*']
+            keywords: [home assistant, light, lights, lamp, heating, thermostat, temperature, living room, kitchen, bedroom, bathroom, garage, timer, broadcast, shopping list, media player, blinds, curtains, the house]
+          documents:
+            label: 'PDF files — read pages, extract text and tables'
+            tools: ['mcp__pdf__*']
+            keywords: [pdf, document, pages, chapter, invoice, manual, paper]
+          vision:
+            label: 'images — read a screenshot, photo or diagram by path'
+            tools: ['mcp__vision__*', read_image]
+            keywords: [image, screenshot, photo, picture, diagram, png, jpg, jpeg]
+        onDemand:
+          vesta-ops: []
+          vesta-build: []
+          vesta-research: [documents]
+          vesta-companion: []
+          vesta-auto: []
+          vesta-routine: []
 
     # ── routines (roadmap R1–R3, 2026-09-11): scheduled agent jobs ─────────
     # $DSH_HOME/routines.yaml → each due routine becomes an ordinary session in

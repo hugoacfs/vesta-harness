@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-vesta-tool-restrict",
-  "description": "Vesta host plugin: per-preset tool allow lists applied to each agent at creation (keeps the PTC SDK small for the Batch mode)",
-  "version": "0.1.0",
+  "description": "Vesta host plugin: per-preset tool allow lists and tool groups on demand (dormant groups masked at creation, enabled by keyword, tool or /tools)",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -22,6 +22,9 @@
   "dependencies": {
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-agent-presets": "workspace:^",
+    "@deepseek-ai/dsh-commands": "workspace:^",
+    "@deepseek-ai/dsh-scope": "workspace:^",
+    "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^"
   },

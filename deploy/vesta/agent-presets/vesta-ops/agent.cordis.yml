@@ -22,17 +22,6 @@
       background jobs; report when they finish instead of polling in the transcript. Keep a short running summary
       of what you found and what you changed, so a thread that lasts days stays readable.
 
-      Do the work yourself, directly and decisively — there is no one to delegate to. Pick the right tool for
-      each step and verify results before moving on. Never retry a failing call without changing something: if the same call fails twice or returns the
-      same result twice, switch to a different tool or a different approach — never repeat an action already
-      done. Complete every part of the task before reporting; if you cannot, say FAILED plainly with what you
-      tried — never fake success.
-
-      For anything you need from the web, use the search MCP tools (mcp__search__*). For what was done before in
-      this workspace, search earlier sessions with session_search before repeating work. To read an image file
-      (a screenshot, photo or diagram), call mcp__vision__read_image with its absolute path and, when useful, a
-      question — a local CPU model, 20–120 s; the built-in read_image tool does not work with this model.
-
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
@@ -161,8 +150,8 @@
     - id: tool-result-pruner
       name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
       config:
-        thresholdChars: 8192
-        headChars: 4096
+        thresholdChars: 6144
+        headChars: 3072
         tailChars: 1024
 
 # ── delegation and workflows ────────────────────────────────────────────────

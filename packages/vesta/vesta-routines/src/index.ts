@@ -90,6 +90,10 @@ export interface Config {
   linkBase: string
   /** The agent preset threads are composed from. @default 'vesta-routine' */
   preset: string
+  /** The code-mode preset used by default when a routine's tier allows it; empty disables the default. @default 'vesta-batch' */
+  batchPreset: string
+  /** Tiers at which the code-mode preset may run. @default ['workspace-write', 'danger-full-access'] */
+  batchTiers: string[]
   /** Compact the thread after a run whose last request used more input tokens than this. @default 24000 */
   compactAboveTokens: number
   /** Rotate the thread into the archive after this many runs (a routine may override). @default 100 */
@@ -115,6 +119,8 @@ export const Config: z<Config> = z.object({
   notifyTool: z.string().default('notify'),
   linkBase: z.string().default(''),
   preset: z.string().default('vesta-routine'),
+  batchPreset: z.string().default('vesta-batch'),
+  batchTiers: z.array(z.string()).default(['workspace-write', 'danger-full-access']),
   compactAboveTokens: z.number().default(24000),
   rotateAfterRuns: z.number().default(100),
   maxConcurrent: z.number().default(1),
@@ -325,6 +331,10 @@ export function apply(ctx: Context, config: Config): void {
   const legacyFile = config.legacyFile === '' ? dshHomePath('routines.yaml') : expandHome(config.legacyFile)
 
   let cache = new Map<string, RoutineFolder>()
+  const validation = { batchPreset: config.batchPreset, batchTiers: config.batchTiers }
+  /** The preset a routine's thread is composed from: its own choice, else Batch where the tier allows, else the plain routine preset. */
+  const presetFor = (routine: Routine): string => routine.preset
+    ?? (config.batchPreset !== '' && config.batchTiers.includes(routine.permission) ? config.batchPreset : config.preset)
   const threads = new Map<string, Thread>()
   const sessionToRoutine = new Map<string, string>()
   const active = new Map<string, Run>()
@@ -337,7 +347,7 @@ export function apply(ctx: Context, config: Config): void {
   let booted = false
 
   const load = async (): Promise<RoutineFolder[]> => {
-    const folders = await readFolders(root, config.defaultTimeoutMinutes, cache)
+    const folders = await readFolders(root, config.defaultTimeoutMinutes, cache, validation)
     cache = new Map(folders.map(folder => [folder.name, folder]))
     schedules.clear()
     for (const folder of folders) {
@@ -400,7 +410,7 @@ export function apply(ctx: Context, config: Config): void {
       thread.threadRuns = 0
     }
     await ctx.workspaceRegistry.create(routine.workspace)
-    const { sessionId } = await ctx.sessionController.create({ cwd: routine.workspace, agentPreset: routine.preset ?? config.preset })
+    const { sessionId } = await ctx.sessionController.create({ cwd: routine.workspace, agentPreset: presetFor(routine) })
     sessionToRoutine.set(sessionId, folder.name)
     thread.sessionId = sessionId
     thread.createdAt = new Date().toISOString()
@@ -812,7 +822,8 @@ export function apply(ctx: Context, config: Config): void {
       workspace: routine?.workspace,
       permission: routine?.permission,
       reasoning: routine?.reasoning ?? 'xhigh',
-      preset: routine?.preset ?? config.preset,
+      preset: routine === undefined ? config.preset : presetFor(routine),
+      presetChosen: routine?.preset,
       notify: routine?.notify,
       timeoutMinutes: routine?.timeoutMinutes,
       enabled: routine?.enabled ?? false,
@@ -889,7 +900,7 @@ export function apply(ctx: Context, config: Config): void {
     if (body instanceof Response) return body
     const routineName = typeof body['name'] === 'string' ? body['name'].trim() : ''
     if (!NAME.test(routineName)) return Response.json({ errors: ['name must be lowercase letters, digits and dashes (1-64)'] }, { status: 400 })
-    const { routine, errors } = validateRoutine(routineName, body, config.defaultTimeoutMinutes)
+    const { routine, errors } = validateRoutine(routineName, body, config.defaultTimeoutMinutes, validation)
     if (routine === undefined) return Response.json({ errors }, { status: 400 })
     await load()
     const previous = cache.get(routineName)?.routine

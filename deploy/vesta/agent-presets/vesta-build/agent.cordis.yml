@@ -24,16 +24,6 @@
       at a time; before starting another, check list_agents and wait for a settlement notice from a running
       child. Delegate only self-contained pieces with a clear deliverable and do the rest yourself.
 
-      Never retry a failing call without changing something: if the same call fails twice or returns the
-      same result twice, switch to a different tool or a different approach — never repeat an action already
-      done. Complete every part of the task before reporting; if you cannot, say FAILED plainly with what you
-      tried — never fake success.
-
-      For anything you need from the web, use the search MCP tools (mcp__search__*). For what was done before in
-      this workspace, search earlier sessions with session_search before repeating work. To read an image file
-      (a screenshot, photo or diagram), call mcp__vision__read_image with its absolute path and, when useful, a
-      question — a local CPU model, 20–120 s; the built-in read_image tool does not work with this model.
-
 # When the tool-presentation row below is enabled, add to the persona: "For three or more
 # related tool calls, write one run_code program (an async TypeScript body calling
 # tools.<name>(args)) and print only what matters; a single step stays a direct call.
@@ -187,8 +177,8 @@
     - id: tool-result-pruner
       name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
       config:
-        thresholdChars: 8192
-        headChars: 4096
+        thresholdChars: 6144
+        headChars: 3072
         tailChars: 1024
 
 # ── delegation and workflows ────────────────────────────────────────────────

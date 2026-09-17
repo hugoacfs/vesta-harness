@@ -10799,6 +10799,9 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+      '@deepseek-ai/dsh-vesta-tool-restrict':
+        specifier: workspace:^
+        version: link:../vesta-tool-restrict
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -10933,6 +10936,15 @@ importers:
       '@deepseek-ai/dsh-agent-presets':
         specifier: workspace:^
         version: link:../../preset/agent-presets
+      '@deepseek-ai/dsh-commands':
+        specifier: workspace:^
+        version: link:../../interaction/commands
+      '@deepseek-ai/dsh-scope':
+        specifier: workspace:^
+        version: link:../../core/scope
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools

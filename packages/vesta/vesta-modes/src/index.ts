@@ -34,6 +34,7 @@ import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import { scopeChainOf } from '@deepseek-ai/dsh-scope'
 import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-vesta-tool-restrict'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import yaml from 'js-yaml'
@@ -87,13 +88,28 @@ export interface PtcConfig {
   presets: string[]
 }
 
+/** Reasoning depth chosen with the mode by Auto (engine-fit E3). */
+export interface DepthConfig {
+  /** Ask the classifier for a depth as well as a mode. @default true */
+  enabled: boolean
+  /** Reasoning level for a quick message (a check, a lookup, a short answer). @default 'medium' */
+  quick: string
+  /** Modes whose deep level may be lowered to `quick`; Companion is already off. @default ops, build, research */
+  presets: string[]
+}
+
 export interface Config {
   modes: Record<string, ModeSettings>
   /** Where `/mode` overrides are kept; empty = `$DSH_HOME/mode-overrides.json`. @default '' */
   overridesFile: string
   auto: AutoConfig
   ptc: PtcConfig
+  depth: DepthConfig
+  /** The shared working rules rendered right after every persona (engine-fit E1); empty renders nothing. @default '' */
+  core: string
 }
+
+const DEFAULT_DEPTH: DepthConfig = { enabled: true, quick: 'medium', presets: ['vesta-ops', 'vesta-build', 'vesta-research'] }
 
 const DEFAULT_PTC: PtcConfig = { guard: true, tool: 'run_code', tiers: ['workspace-write', 'danger-full-access'], presets: [] }
 
@@ -132,6 +148,12 @@ export const Config: z<Config> = z.object({
     tiers: z.array(z.string()).default(DEFAULT_PTC.tiers),
     presets: z.array(z.string()).default([]),
   }).default(DEFAULT_PTC),
+  depth: z.object({
+    enabled: z.boolean().default(true),
+    quick: z.string().default('medium'),
+    presets: z.array(z.string()).default(DEFAULT_DEPTH.presets),
+  }).default(DEFAULT_DEPTH),
+  core: z.string().default(''),
 })
 
 const RETRY_DELAY_MS = 400
@@ -219,6 +241,12 @@ export function apply(ctx: Context, config: Config): void {
       : `The user switched this session to ${label} mode with /mode. The guidance below replaces the mode guidance above; the tool set is unchanged.\n\n${persona}`)
   }
 
+  const setReasoning = async (session: Session, level: string): Promise<void> => {
+    const route = ctx.get('agentDefaultModel')?.currentSelection()
+    if (route === undefined) throw new Error('no default model selection yet')
+    await ctx.sessionController.selectModel({ sessionId: session.id, provider: route.provider, model: route.model, reasoningEffort: level })
+  }
+
   const applySettings = async (session: Session, preset: string): Promise<void> => {
     const mode = config.modes[preset]
     if (mode === undefined) return
@@ -258,6 +286,11 @@ export function apply(ctx: Context, config: Config): void {
     const override = overrides.get(session.id)
     if (override !== undefined) void prepareSection(session.id, override)
   }), 'vesta-modes: apply at session start')
+
+  // The shared working rules, right after every persona prefix (engine-fit E1): one voice in every mode.
+  if (config.core.trim() !== '') {
+    ctx.effect(() => ctx.systemPrompt.section({ name: 'vesta:core', order: 0.5, text: config.core.trim() }), 'vesta-modes: core section')
+  }
 
   // The override persona, rendered only for switched sessions, right after the persona prefix.
   ctx.effect(() => ctx.systemPrompt.section({
@@ -326,7 +359,9 @@ export function apply(ctx: Context, config: Config): void {
     const lines = auto.choices.map(preset => `${labelOf(preset)} — ${auto.descriptions[preset] ?? preset}`)
     return [
       'You route the first message of a new conversation with Vesta, a personal AI operator on the user\'s home server, to one mode.',
-      `Answer with exactly one word, the mode name: ${auto.choices.map(labelOf).join(', ')}. Nothing else.`,
+      depth.enabled
+        ? `Answer with exactly two words: the mode name (${auto.choices.map(labelOf).join(', ')}) and the depth — quick for a check, a lookup or a short answer, deep for design, debugging, planning or anything with several steps. Nothing else.`
+        : `Answer with exactly one word, the mode name: ${auto.choices.map(labelOf).join(', ')}. Nothing else.`,
       ...lines,
       'A technical or factual question is research even when it is phrased casually or says no tools are needed;'
       + ' companion is only for personal, social or everyday-life talk. Something to check, run or fix on a machine is ops;'
@@ -336,15 +371,21 @@ export function apply(ctx: Context, config: Config): void {
       cwd === undefined ? '' : `The conversation's working directory is ${cwd} (a code repository suggests ${labelOf(auto.choices[1] ?? 'build')}; a home directory suggests ${labelOf(auto.choices[0] ?? 'ops')}).`,
     ].filter(line => line !== '').join('\n')
   }
-  const parseChoice = (answer: string): string | undefined => {
-    const word = answer.toLowerCase().replace(/[^a-z-]+/gu, ' ').trim().split(/\s+/u)[0] ?? ''
-    if (word === '') return undefined
-    for (const preset of auto.choices) {
-      if (word === labelOf(preset) || word === preset || `vesta-${word}` === preset) return preset
+  const parseChoice = (answer: string): { preset: string | undefined; quick: boolean } => {
+    const words = answer.toLowerCase().replace(/[^a-z-]+/gu, ' ').trim().split(/\s+/u).filter(word => word !== '')
+    let preset: string | undefined
+    for (const word of words) {
+      for (const candidate of auto.choices) {
+        if (word === labelOf(candidate) || word === candidate || `vesta-${word}` === candidate) preset = candidate
+      }
+      if (preset !== undefined) break
     }
-    return undefined
+    return { preset, quick: words.includes('quick') && !words.includes('deep') }
   }
-  const classify = async (text: string, cwd: string | undefined): Promise<{ preset: string | undefined; answer: string }> => {
+  const depth: DepthConfig = { ...DEFAULT_DEPTH, ...config.depth }
+  const classify = async (
+    text: string, cwd: string | undefined,
+  ): Promise<{ preset: string | undefined; quick: boolean; answer: string }> => {
     const route = ctx.get('agentDefaultModel')?.currentSelection()
     if (route === undefined) throw new Error('no default model selection yet')
     const options: GenerateOptions = {
@@ -366,22 +407,28 @@ export function apply(ctx: Context, config: Config): void {
       .map(block => (block.type === 'text' ? block.text : ''))
       .join(' ')
       .trim()
-    return { preset: parseChoice(answer), answer }
+    const parsed = parseChoice(answer)
+    return { preset: parsed.preset, quick: parsed.quick, answer }
   }
   const beforePrompt = async (agent: Agent, request: SessionPromptRequest): Promise<Agent> => {
-    if (!auto.enabled) return agent
     const session = agent.session
+    const text = request.content.map(part => (part.type === 'text' ? part.text : '')).join('\n').trim()
+    // Tool groups on demand (engine-fit E2): a keyword in the message wakes a dormant group before the turn.
+    const woken = ctx.get('vestaToolGroups')?.autoEnable(session.id, text) ?? []
+    if (woken.length > 0) ctx.logger.info(`vesta-modes: ${session.id}: tool groups enabled by keyword: ${woken.join(', ')}`)
+    if (!auto.enabled) return agent
     const composed = ctx.agentPresets.composedPreset(agent.ctx) ?? session.header.agentPreset
     if (composed !== auto.preset || hasTurn(session)) return agent
     const started = Date.now()
-    const text = request.content.map(part => (part.type === 'text' ? part.text : '')).join('\n').trim()
     const override = overrides.get(session.id)
     let chosen = override
+    let quick = false
     let answer = override === undefined ? '' : `/mode ${override}`
     if (chosen === undefined) {
       try {
         const verdict = await classify(text, session.header.cwd)
         chosen = verdict.preset
+        quick = verdict.quick
         answer = verdict.answer
       } catch (error: unknown) {
         ctx.logger.warn(`vesta-modes: auto classifier failed for ${session.id}: ${String(error)}`)
@@ -402,11 +449,15 @@ export function apply(ctx: Context, config: Config): void {
     }
     try {
       await applySettings(session, preset)
+      // Depth (engine-fit E3): a quick message on a deep mode thinks at the quick level; /think overrides.
+      if (depth.enabled && quick && depth.presets.includes(preset) && config.modes[preset]?.reasoning !== depth.quick) {
+        await setReasoning(session, depth.quick)
+      }
     } catch (error: unknown) {
       ctx.logger.warn(`vesta-modes: auto applied ${preset} to ${session.id} but not its settings: ${String(error)}`)
     }
     const ms = Date.now() - started
-    ctx.logger.info(`vesta-modes: auto routed ${session.id} → ${preset} in ${String(ms)} ms (answer "${answer.slice(0, 40)}")`)
+    ctx.logger.info(`vesta-modes: auto routed ${session.id} → ${preset}${quick ? ' (quick)' : ''} in ${String(ms)} ms (answer "${answer.slice(0, 40)}")`)
     return ctx.get('agents')?.get(session.id) ?? agent
   }
   ctx.provide('vestaPromptRouter', { beforePrompt })
@@ -428,6 +479,24 @@ export function apply(ctx: Context, config: Config): void {
       }
     }), 'vesta-modes: ptc guard')
   }
+
+  const thinkCommand = async (invocation: CommandInvocation): Promise<CommandResult> => {
+    const level = invocation.rawInput.trim().toLowerCase()
+    if (level === '') return { kind: 'error', text: 'Usage: /think <off | medium | xhigh>' }
+    try {
+      await setReasoning(invocation.agent.session, level)
+    } catch (error: unknown) {
+      return { kind: 'error', text: `Could not set reasoning "${level}": ${error instanceof Error ? error.message : String(error)}` }
+    }
+    ctx.logger.info(`vesta-modes: ${invocation.agent.session.id} reasoning set to ${level} by /think`)
+    return { kind: 'success', text: `Reasoning ${level} from the next reply.` }
+  }
+  ctx.effect(() => ctx.commands.register({
+    name: 'think',
+    description: 'Set this session\'s reasoning level (off, medium or xhigh)',
+    input: { hint: 'off | medium | xhigh' },
+    handler: invocation => thinkCommand(invocation),
+  }), 'vesta-modes: /think command')
 
   ctx.effect(() => ctx.commands.register({
     name: 'mode',
