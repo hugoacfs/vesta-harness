@@ -75,12 +75,8 @@
   config:
     mode: ptc
 
-# Only these tools reach the SDK; every other inherited tool (MCP servers, jobs, web search,
-# delegation) is hidden. Upstream's per-agent reminder tools stay regardless.
-- id: tool-restrict
-  name: '@deepseek-ai/dsh-vesta-tool-restrict'
-  config:
-    allow: [bash, read, write, edit, glob, grep, session_search, session_event_search, session_trace, session_event_trace, session_event_read, routine_note]
+# The SDK declares only this preset's tools: the host plugin vesta-tool-restrict (bundle patch)
+# masks every other inherited tool for agents of this preset at creation.
 
 # Persistent terminals (roadmap T7, 2026-09-12): six PTY tools (open, send, read,
 # signal, close, list) over the host's terminal seam and bash backend; for

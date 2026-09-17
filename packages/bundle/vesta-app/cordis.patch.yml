@@ -126,6 +126,16 @@
     - id: vesta-incognito
       name: '@deepseek-ai/dsh-vesta-incognito'
 
+    # ── roadmap T12 v2 (2026-09-17): Batch mode's lean tool surface ─────────
+    # Agents of vesta-batch see only these tools (plus per-agent reminders), so the
+    # PTC SDK stays small. Applied per agent at creation; see the package README.
+    - id: vesta-tool-restrict
+      name: '@deepseek-ai/dsh-vesta-tool-restrict'
+      config:
+        presets:
+          vesta-batch:
+            allow: [bash, read, write, edit, glob, grep, session_search, session_event_search, session_trace, session_event_trace, session_event_read, routine_note]
+
     # ── routines (roadmap R1–R3, 2026-09-11): scheduled agent jobs ─────────
     # $DSH_HOME/routines.yaml → each due routine becomes an ordinary session in
     # its workspace on its mode's preset at its own permission tier, one at a

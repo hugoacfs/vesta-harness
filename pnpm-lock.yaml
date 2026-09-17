@@ -10927,6 +10927,12 @@ importers:
 
   packages/vesta/vesta-tool-restrict:
     dependencies:
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-agent-presets':
+        specifier: workspace:^
+        version: link:../../preset/agent-presets
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools

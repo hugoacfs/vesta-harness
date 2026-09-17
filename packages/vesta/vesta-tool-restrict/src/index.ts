@@ -1,56 +1,56 @@
 /**
- * Vesta tool restriction, a preset row (roadmap T12 v2): agents composed from
- * the preset see only the tools named in `allow` — the mask applies to every
- * tool the agent inherits, the preset's own rows included, so list the preset's
- * tools by name; tools registered per agent (upstream's reminders) stay visible
- * regardless. With PTC presentation this keeps the generated SDK small.
- * Uses upstream's `tools.restrict` in the preset's scope. The mask can only
- * name tools that exist at the time it is applied, and sibling rows register
- * theirs while this row loads, so an unknown name is retried for a few seconds
- * before the mask is dropped with a warning.
+ * Vesta tool restriction, host plugin (roadmap T12 v2): agents composed from a
+ * listed preset see only the tools named for it. Upstream's `tools.restrict`
+ * mask filters what a scope inherits and never that scope's own registrations,
+ * and it is validated from the scope it is registered in — so a preset row
+ * cannot name the preset's own tools, while an agent below the preset inherits
+ * them. The mask is therefore applied per agent, from the agent's own scope,
+ * at `agent/created` (creation and resume alike), exactly as upstream's
+ * delegation runtime filters a child agent. Tools registered per agent
+ * (reminders) stay visible regardless. With PTC presentation this keeps the
+ * generated SDK small.
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
 
 export const name = 'vesta-tool-restrict'
 
-/** Required service: the tool registry of this preset realm. */
-export const inject = ['tools']
+/** Required services: the agent registry (for the event) and the preset roster (which preset an agent runs). */
+export const inject = ['agents', 'agentPresets']
+
+/** One preset's visible tool list. */
+export interface PresetRule {
+  /** Tool names that stay visible; every other inherited tool is hidden. */
+  allow: string[]
+}
 
 export interface Config {
-  /** Tool names that stay visible; every other inherited tool is hidden. @default [] */
-  allow: string[]
-  /** Attempts while sibling rows are still registering their tools. @default 40 */
-  retries: number
-  /** Milliseconds between attempts. @default 250 */
-  retryMs: number
+  /** Preset id → rule. Presets absent from the map are left alone. */
+  presets: Record<string, PresetRule>
 }
 
 export const Config: z<Config> = z.object({
-  allow: z.array(z.string()).default([]),
-  retries: z.number().default(40),
-  retryMs: z.number().default(250),
+  presets: z.dict(z.object({ allow: z.array(z.string()).default([]) })).default({}),
 })
 
 /**
- * Register the mask in the preset's scope, waiting for sibling rows' tools.
- * @param ctx - preset realm context.
- * @param config - the allow list and the retry budget.
+ * Mask each new agent of a listed preset from its own scope.
+ * @param ctx - host plugin context.
+ * @param config - preset id → allow list.
  */
 export function apply(ctx: Context, config: Config): void {
-  const attempt = (tries: number): void => {
+  ctx.effect(() => ctx.on('agent/created', ({ agent }: { agent: Agent }) => {
+    const preset = ctx.agentPresets.composedPreset(agent.ctx) ?? agent.session.header.agentPreset
+    const rule = preset === undefined ? undefined : config.presets[preset]
+    if (rule === undefined) return
     try {
-      ctx.effect(() => ctx.tools.restrict({ allow: config.allow }), 'vesta-tool-restrict: mask')
-      ctx.logger.info(`vesta-tool-restrict: visible tools limited to ${config.allow.length === 0 ? 'none' : config.allow.join(', ')}`)
+      agent.ctx.tools.restrict({ allow: rule.allow })
+      ctx.logger.info(`vesta-tool-restrict: ${agent.id} (${preset}) sees ${rule.allow.length === 0 ? 'no inherited tool' : rule.allow.join(', ')}`)
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (message.includes('unknown global tool') && tries < config.retries) {
-        setTimeout(() => { attempt(tries + 1) }, config.retryMs)
-        return
-      }
-      ctx.logger.warn(`vesta-tool-restrict: mask not applied: ${message}`)
+      ctx.logger.warn(`vesta-tool-restrict: ${agent.id} (${preset}): mask not applied: ${error instanceof Error ? error.message : String(error)}`)
     }
-  }
-  attempt(0)
+  }), 'vesta-tool-restrict: agent masks')
 }
