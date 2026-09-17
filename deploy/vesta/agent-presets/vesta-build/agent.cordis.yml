@@ -34,9 +34,10 @@
       (a screenshot, photo or diagram), call mcp__vision__read_image with its absolute path and, when useful, a
       question — a local CPU model, 20–120 s; the built-in read_image tool does not work with this model.
 
-      For three or more related tool calls, write one run_code program — the body of an async TypeScript
-      function calling tools.<name>(args) — and print only what matters; a single simple step stays a direct
-      tool call. Never put secrets or credentials in a program.
+# When the tool-presentation row below is enabled, add to the persona: "For three or more
+# related tool calls, write one run_code program (an async TypeScript body calling
+# tools.<name>(args)) and print only what matters; a single step stays a direct call.
+# Never put secrets in a program."
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -86,14 +87,19 @@
 - id: tool-lsp
   name: '@deepseek-ai/dsh-tool-lsp'
 
-# Programmatic tool calling (roadmap T12, 2026-09-17): Build also sees run_code plus a
-# generated SDK (mode both); simple steps stay direct calls. The vesta-modes guard
-# refuses run_code below the workspace-write tier because model code in the worker
-# runs with the harness's own authority, outside the bash sandbox.
-- id: tool-presentation
-  name: '@deepseek-ai/dsh-agent-tool-presentation'
-  config:
-    mode: both
+# Programmatic tool calling (roadmap T12, measured 2026-09-17): OPT-IN, off by default.
+# Uncomment the row to give Build run_code plus a generated SDK (mode both: direct calls
+# stay; mode ptc: only run_code). Measured on staging with the Qwen lane: the SDK block
+# for Build's tool set costs about 20 k input tokens on EVERY request (first request
+# 21 k native → 41 k both), and five benchmark tasks got no faster (run_code was used in
+# two of five). The vesta-modes guard refuses run_code below the workspace-write tier
+# because model code in the worker runs with the harness's own authority, outside the
+# bash sandbox. Revisit after the 0.1.6 sync (the runtime packages were renamed) or with
+# a leaner SDK renderer.
+# - id: tool-presentation
+#   name: '@deepseek-ai/dsh-agent-tool-presentation'
+#   config:
+#     mode: both
 
 # `present` (upstream 0.1.5): the model hands finished files to the user as download
 # cards ("immutable file deliveries"). Bare tool row, no realm. Added 2026-09-11 with the
