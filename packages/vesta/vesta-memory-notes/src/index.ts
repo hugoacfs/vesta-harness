@@ -76,6 +76,8 @@ export interface Config {
   recallLimit: number
   /** Characters of a note body rendered by recall. @default 600 */
   recallBodyChars: number
+  /** Search score below which a note is not recalled (the store's keyword score; unrelated notes score under 5). @default 8 */
+  recallMinScore: number
   /** Where automatic writes are logged; empty = `$DSH_HOME/memory-notes.log.jsonl`. @default '' */
   logFile: string
   /** Deadline of one memory server call in milliseconds. @default 8000 */
@@ -98,6 +100,7 @@ export const Config: z<Config> = z.object({
   recall: z.boolean().default(true),
   recallLimit: z.number().default(3),
   recallBodyChars: z.number().default(600),
+  recallMinScore: z.number().default(8),
   logFile: z.string().default(''),
   timeoutMs: z.number().default(8000),
 })
@@ -323,7 +326,7 @@ export function apply(ctx: Context, config: Config): void {
     return text
   }
 
-  const propose = async (state: SessionState): Promise<Candidate[]> => {
+  const propose = async (state: SessionState): Promise<{ candidates: Candidate[]; raw: string }> => {
     const route = ctx.get('agentDefaultModel')?.currentSelection()
     if (route === undefined) throw new Error('no default model selection yet')
     const options: GenerateOptions = {
@@ -342,7 +345,7 @@ export function apply(ctx: Context, config: Config): void {
     const assembler = new BlockAssembler()
     for await (const chunk of ctx.llm.stream(options)) assembler.push(chunk)
     const text = assembler.blocks().map(block => (block.type === 'text' ? block.text : '')).join(' ')
-    return parseCandidates(text, config.maxPerPass)
+    return { candidates: parseCandidates(text, config.maxPerPass), raw: text }
   }
 
   /** Ask the model whether a candidate is about the same subject as one of the search hits; returns the hit's name or undefined. */
@@ -388,7 +391,11 @@ export function apply(ctx: Context, config: Config): void {
         state.userTurns = 0
         return { written, skipped }
       }
-      const candidates = await propose(state)
+      const proposed = await propose(state)
+      const candidates = proposed.candidates
+      if (candidates.length === 0) {
+        await log({ session: sessionId, preset: state.preset, reason, action: 'none', detail: proposed.raw.slice(0, 300) })
+      }
       for (const candidate of candidates) {
         if (state.written >= config.maxPerSession || dailyCount >= config.dailyCap) break
         if (candidate.confidence < config.minConfidence) {
@@ -553,7 +560,7 @@ export function apply(ctx: Context, config: Config): void {
     const top = found[0]?.score
     const hits = top === undefined
       ? found.slice(0, config.recallLimit)
-      : found.filter(hit => hit.score !== undefined && hit.score >= top * 0.5).slice(0, config.recallLimit)
+      : found.filter(hit => hit.score !== undefined && hit.score >= Math.max(config.recallMinScore, top * 0.5)).slice(0, config.recallLimit)
     const key = hits.map(hit => hit.name).join('|')
     if (key === state.recallKey) return
     state.recallKey = key

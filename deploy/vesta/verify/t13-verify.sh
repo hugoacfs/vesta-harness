@@ -60,7 +60,13 @@ say "$D" "What is 7 + 7? One word."
 sleep 60; echo "  log entries for D (expect none):"; logfor "$D"
 echo; echo "== E. /memory status in B, then cleanup of the test notes"
 rpc commands/execute "{\"agentId\":\"$B\",\"line\":\"/memory\",\"submittedAttachments\":[]}" | python3 -c 'import sys,json;d=json.load(sys.stdin);print("/memory →", str(d.get("result",{}).get("value",{}).get("result",{}).get("text"))[:400])'
-names=$(ssh vesta "grep -hE '\"action\":\"(created|updated)\"' $H/memory-notes.log.jsonl 2>/dev/null" | python3 -c 'import sys,json;print(" ".join(sorted(set(json.loads(l)["name"] for l in sys.stdin if l.strip()))))')
-echo "  notes touched by the test: $names"
-for n in $names; do case "$n" in *t13*|*bramble*|*backup*|*bak-*|*printer*) ssh vesta "curl -s -m 10 -X POST http://127.0.0.1:7332/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"probe\",\"version\":\"0\"}}}' -D /tmp/mh.txt -o /dev/null; sid=\$(grep -i mcp-session-id /tmp/mh.txt | awk '{print \$2}' | tr -d '\r'); curl -s -m 10 -X POST http://127.0.0.1:7332/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \${sid:+-H \"mcp-session-id: \$sid\"} -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"memory_delete\",\"arguments\":{\"name\":\"$n\"}}}' | sed 's/^data: //' | grep '^{' | tail -1 | python3 -c 'import sys,json;d=json.load(sys.stdin);print(\"    deleted $n:\", d.get(\"result\",{}).get(\"content\",[{}])[0].get(\"text\",\"\")[:80])'; rm -f /tmp/mh.txt";; *) echo "    kept $n (not a test note — review by hand)";; esac; done
+ssh vesta 'init() { curl -s -m 10 -X POST http://127.0.0.1:7332/mcp -H "content-type: application/json" -H "accept: application/json, text/event-stream" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"probe\",\"version\":\"0\"}}}" -D /tmp/mh.txt -o /dev/null; grep -i "mcp-session-id" /tmp/mh.txt | awk "{print \$2}" | tr -d "\r"; }; sid=$(init); call() { curl -s -m 15 -X POST http://127.0.0.1:7332/mcp -H "content-type: application/json" -H "accept: application/json, text/event-stream" ${sid:+-H "mcp-session-id: $sid"} -d "$1" | sed "s/^data: //" | grep "^{" | tail -1; }; names=$(call "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"memory_list\",\"arguments\":{}}}" | python3 -c "
+import sys,json
+d=json.load(sys.stdin); t=d.get(\"result\",{}).get(\"content\",[{}])[0].get(\"text\",\"{}\")
+try: notes=json.loads(t).get(\"notes\",[])
+except Exception: notes=[]
+for n in notes:
+    blob=(n.get(\"name\",\"\")+\" \"+n.get(\"description\",\"\")).lower()
+    if \"t13\" in blob or \"bramble\" in blob: print(n[\"name\"])
+"); echo "  test notes in the store: ${names:-none}"; for n in $names; do call "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"memory_delete\",\"arguments\":{\"name\":\"$n\"}}}" | grep -o "\"deleted\": *true" | sed "s/^/  $n /"; done; rm -f /tmp/mh.txt'
 echo "== done"
