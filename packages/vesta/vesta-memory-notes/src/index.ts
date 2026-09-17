@@ -384,7 +384,9 @@ export function apply(ctx: Context, config: Config): void {
         written += 1
         state.written += 1
         dailyCount += 1
-        await log({ session: sessionId, preset: state.preset, reason, action, name: noteName, scope: match?.scope ?? candidate.scope, confidence: candidate.confidence })
+        await log({
+          session: sessionId, preset: state.preset, reason, action, name: noteName, scope: match?.scope ?? candidate.scope, confidence: candidate.confidence,
+        })
         ctx.logger.info(`vesta-memory-notes: ${sessionId} ${action} ${noteName} (${reason})`)
       }
       state.pending = ''
@@ -411,7 +413,11 @@ export function apply(ctx: Context, config: Config): void {
     if (state === undefined) return
     const record = event as { readonly type: string; readonly data?: unknown }
     const data = record.data as {
-      source?: { kind?: string }; message?: { content?: unknown }; content?: unknown; name?: string; arguments?: string
+      source?: { kind?: string }
+      message?: { content?: unknown }
+      content?: unknown
+      name?: string
+      arguments?: string
     } | undefined
     if (record.type === 'user/message' && data?.source?.kind === 'user') {
       state.userTurns += 1
