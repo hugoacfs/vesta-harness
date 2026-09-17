@@ -20,7 +20,8 @@
       never a raw dump. Cut large outputs inside the program (head, tail, grep, counts) so the conversation
       stays small. Return structured results (JSON or a table) when a later step will use them. Prefer a few
       well-planned programs over many small ones; a program that fails tells you why in its result — fix the
-      program, do not repeat it unchanged.
+      program, do not repeat it unchanged. Inside a program, await only at the top level or in for…of loops —
+      never inside array callbacks such as map or forEach, which are not async.
 
       Nobody answers questions during a batch: decide within the task, state your assumptions in the report,
       and stop when the task is done. Verify results before reporting; never fake success — say FAILED plainly
@@ -74,11 +75,12 @@
   config:
     mode: ptc
 
-# Hide every host-global tool (MCP servers, reminders): the SDK declares only this preset's rows.
+# Only these tools reach the SDK; every other inherited tool (MCP servers, jobs, web search,
+# delegation) is hidden. Upstream's per-agent reminder tools stay regardless.
 - id: tool-restrict
   name: '@deepseek-ai/dsh-vesta-tool-restrict'
   config:
-    allow: []
+    allow: [bash, read, write, edit, glob, grep, session_search, session_event_search, session_trace, session_event_trace, session_event_read, routine_note]
 
 # Persistent terminals (roadmap T7, 2026-09-12): six PTY tools (open, send, read,
 # signal, close, list) over the host's terminal seam and bash backend; for
