@@ -72,7 +72,8 @@ export function validateRoutine(
   if (reasoning !== undefined && !REASONING.has(reasoning)) problems.push('reasoning must be off or xhigh')
   const preset = text(record['preset'])
   if (preset !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(preset)) problems.push('preset must be a preset id (lowercase letters, digits, dashes)')
-  if (preset !== undefined && preset === options.batchPreset && options.batchTiers !== undefined && permission !== undefined && !options.batchTiers.includes(permission)) {
+  const codeMode = preset !== undefined && preset === options.batchPreset && options.batchTiers !== undefined
+  if (codeMode && permission !== undefined && !options.batchTiers.includes(permission)) {
     problems.push(`the ${preset} preset works only through run_code, which needs ${options.batchTiers.join(' or ')}; raise the tier or pick another preset`)
   }
   const brief = text(record['brief'])
