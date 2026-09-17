@@ -223,3 +223,14 @@
   config:
     default: vesta-ops
     includeShippedRoot: false
+
+# Programmatic tool calling budgets (roadmap T12, 2026-09-17): the worker runtime behind
+# run_code (web-app row `code-runtime`, dsh-code-runtime-worker-thread). Busy time 120 s,
+# output capped at 1 MiB because the outer result enters the model's context; wall clock
+# and heap as shipped. Which presets see run_code is decided per preset (vesta-build: both).
+- id: code-runtime
+  config:
+    computeMs: 120000
+    maxWallMs: 600000
+    maxOutputBytes: 1048576
+    maxOldGenerationSizeMb: 512

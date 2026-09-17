@@ -33,6 +33,7 @@ import { BlockAssembler, createUserMessage, ReasoningEffortId } from '@deepseek-
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import { scopeChainOf } from '@deepseek-ai/dsh-scope'
+import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import yaml from 'js-yaml'
@@ -74,12 +75,25 @@ export interface AutoConfig {
   maxChars: number
 }
 
+/** The programmatic-tool-calling guard (roadmap T12). */
+export interface PtcConfig {
+  /** Refuse the transport tool below the listed tiers. @default true */
+  guard: boolean
+  /** The transport tool's name. @default 'run_code' */
+  tool: string
+  /** Permission tiers that may run model code. @default ['workspace-write', 'danger-full-access'] */
+  tiers: string[]
+}
+
 export interface Config {
   modes: Record<string, ModeSettings>
   /** Where `/mode` overrides are kept; empty = `$DSH_HOME/mode-overrides.json`. @default '' */
   overridesFile: string
   auto: AutoConfig
+  ptc: PtcConfig
 }
+
+const DEFAULT_PTC: PtcConfig = { guard: true, tool: 'run_code', tiers: ['workspace-write', 'danger-full-access'] }
 
 const DEFAULT_CHOICES = ['vesta-ops', 'vesta-build', 'vesta-research', 'vesta-companion']
 const DEFAULT_DESCRIPTIONS: Record<string, string> = {
@@ -110,6 +124,11 @@ export const Config: z<Config> = z.object({
     timeoutMs: z.number().default(8000),
     maxChars: z.number().default(2000),
   }).default(DEFAULT_AUTO),
+  ptc: z.object({
+    guard: z.boolean().default(true),
+    tool: z.string().default('run_code'),
+    tiers: z.array(z.string()).default(DEFAULT_PTC.tiers),
+  }).default(DEFAULT_PTC),
 })
 
 const RETRY_DELAY_MS = 400
@@ -379,6 +398,25 @@ export function apply(ctx: Context, config: Config): void {
     return ctx.get('agents')?.get(session.id) ?? agent
   }
   ctx.provide('vestaPromptRouter', { beforePrompt })
+
+  // PTC guard (roadmap T12): model code in the worker runs with the harness's own
+  // authority, outside the bash sandbox, so the transport tool is refused below the
+  // configured tiers; the model reads the reason and falls back to direct calls.
+  const ptc: PtcConfig = { ...DEFAULT_PTC, ...config.ptc }
+  if (ptc.guard) {
+    ctx.effect(() => ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
+      if (exec.name !== ptc.tool) return next()
+      const session = exec.agent?.session
+      if (session === undefined) return next()
+      const tier = ctx.permissionPresets.current(session)
+      if (ptc.tiers.includes(tier)) return next()
+      return {
+        kind: 'deny',
+        reason: `${ptc.tool} is off at the ${tier} tier: model code runs with the harness's own authority outside the sandbox. `
+          + 'Call the tools directly instead.',
+      }
+    }), 'vesta-modes: ptc guard')
+  }
 
   ctx.effect(() => ctx.commands.register({
     name: 'mode',

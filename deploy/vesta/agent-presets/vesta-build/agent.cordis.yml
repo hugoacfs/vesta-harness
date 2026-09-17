@@ -34,6 +34,10 @@
       (a screenshot, photo or diagram), call mcp__vision__read_image with its absolute path and, when useful, a
       question — a local CPU model, 20–120 s; the built-in read_image tool does not work with this model.
 
+      For three or more related tool calls, write one run_code program — the body of an async TypeScript
+      function calling tools.<name>(args) — and print only what matters; a single simple step stays a direct
+      tool call. Never put secrets or credentials in a program.
+
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
@@ -81,6 +85,15 @@
 # provider (typescript-language-server, basedpyright).
 - id: tool-lsp
   name: '@deepseek-ai/dsh-tool-lsp'
+
+# Programmatic tool calling (roadmap T12, 2026-09-17): Build also sees run_code plus a
+# generated SDK (mode both); simple steps stay direct calls. The vesta-modes guard
+# refuses run_code below the workspace-write tier because model code in the worker
+# runs with the harness's own authority, outside the bash sandbox.
+- id: tool-presentation
+  name: '@deepseek-ai/dsh-agent-tool-presentation'
+  config:
+    mode: both
 
 # `present` (upstream 0.1.5): the model hands finished files to the user as download
 # cards ("immutable file deliveries"). Bare tool row, no realm. Added 2026-09-11 with the

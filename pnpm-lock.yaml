@@ -1757,6 +1757,9 @@ importers:
 
   packages/bundle/vesta-app:
     dependencies:
+      '@deepseek-ai/dsh-agent-tool-presentation':
+        specifier: workspace:^
+        version: link:../../core/agent-tool-presentation
       '@deepseek-ai/dsh-client-ui-vesta-brand':
         specifier: workspace:^
         version: link:../../client/ui-vesta-brand
@@ -10790,6 +10793,9 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
