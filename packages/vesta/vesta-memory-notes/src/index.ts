@@ -385,7 +385,13 @@ export function apply(ctx: Context, config: Config): void {
         state.written += 1
         dailyCount += 1
         await log({
-          session: sessionId, preset: state.preset, reason, action, name: noteName, scope: match?.scope ?? candidate.scope, confidence: candidate.confidence,
+          session: sessionId,
+          preset: state.preset,
+          reason,
+          action,
+          name: noteName,
+          scope: match?.scope ?? candidate.scope,
+          confidence: candidate.confidence,
         })
         ctx.logger.info(`vesta-memory-notes: ${sessionId} ${action} ${noteName} (${reason})`)
       }
