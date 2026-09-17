@@ -87,6 +87,10 @@ rc.7: `systemctl --user enable --now dsh-web && tailscale serve --bg --https=879
 
 The standing direction lives in the server docs: `~/vesta-docs/roadmap.md` (https://vesta.tail22b555.ts.net/docs/#/roadmap). Streams: **M** modes (Ops, Build, Research, Companion, Incognito, Auto; picker on New Session, soft switch mid-session), **T** tooling (quick upstream mounts → Home Assistant and PDF wiring → programmatic tool calling, skills, automatic memory), **R** routines (scheduled agent jobs over `dsh-webhook`, panel plus file, per-routine permission), **V** voice interface (a linked project; `voice-roadmap.md`). Order: quick mounts → modes → routines → big bets. When an item is picked up it gets a phase entry in this file and its status line in the roadmap is updated on completion. Phases P0–P5 below are complete.
 
+## Plan 2026-09-17 — T12, T13, T11 and the 0.1.6 sync
+
+Designs in the server docs: `~/vesta-docs/plan-2026-09-17.md` (https://vesta.tail22b555.ts.net/docs/#/plan-2026-09-17). Order set by Hugo: T12 programmatic tool calling (Build only, `both`, a tier guard, measured first) → T13 automatic memory notes (extraction after idle turns into the memory MCP, a recall section, `/memory`) → T11 skills library (eight first skills under `deploy/vesta/skills`). The upstream 0.1.6 sync is prepared there (1548 commits of drift, five conflicting files, code-runtime packages renamed to `ptc-runtime-*`, upstream's own unarchive replaces our Phase 4 registry patch). Operating rule since 2026-09-17: all work on staging; production only when Hugo asks (he is the gate). Phases get their P-rows here when they start.
+
 ## Plan 2026-09-11 — feature phases (from the interview)
 
 Status: approved 2026-09-11, work started the same day; each phase ends with a documentation break (this file, the runbook, `~/vesta-docs`). Baseline: tag `vesta-stable-2026-09-11` (production and staging on `10251477ea`).
