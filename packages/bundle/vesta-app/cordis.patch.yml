@@ -301,13 +301,17 @@
     default: vesta-ops
     includeShippedRoot: false
 
-# Programmatic tool calling budgets (roadmap T12, 2026-09-17): the worker runtime behind
-# run_code (web-app row `code-runtime`, dsh-code-runtime-worker-thread). Busy time 120 s,
-# output capped at 1 MiB because the outer result enters the model's context; wall clock
-# and heap as shipped. Which presets see run_code is decided per preset (vesta-build: both).
-- id: code-runtime
+# Programmatic tool calling budgets (roadmap T12, 2026-09-17; re-fitted at the 0.1.6 sync,
+# 2026-09-18): the sandboxed Node process behind run_code (base row `ptc-runtime`,
+# dsh-ptc-runtime-node, which replaced the worker-thread runtime and confines the program's
+# own file effects through the same sandbox as bash). Elapsed deadline 300 s by default —
+# it includes nested tool and approval waits, and the old busy-time budget has no
+# equivalent — with a 600 s cap on a per-call request; output capped at 1 MiB because the
+# outer result enters the model's context; heap as shipped. Which presets see run_code is
+# decided per preset (vesta-batch: ptc).
+- id: ptc-runtime
   config:
-    computeMs: 120000
-    maxWallMs: 600000
+    timeoutMs: 300000
+    maxTimeoutMs: 600000
     maxOutputBytes: 1048576
     maxOldGenerationSizeMb: 512
