@@ -14,12 +14,13 @@ for preset in vesta-ops vesta-build vesta-research vesta-companion; do
 import json,sys,re
 perm=[]; reason=None; tools=set(); preset=None
 for line in sys.stdin:
-    e=json.loads(line); t=e.get("type","")
+    e=json.loads(line); t=e.get("type",""); dd=e.get("data") or {}
     if t=="permission/preset": perm.append(json.dumps(e.get("data"))[:80])
     if t=="request/header":
-        cfg=e["data"].get("header",{}).get("config",{}); reason=cfg.get("reasoningEffort")
-        tools|=set(re.findall(r"\"name\":\s*\"([a-z_]+(?:__[a-z_]+)*)\"", json.dumps(e["data"])))
-    if t=="session": preset=e["data"].get("header",{}).get("agentPreset") or e["data"].get("agentPreset")
+        cfg=dd.get("header",{}).get("config",{}); reason=cfg.get("reasoningEffort")
+        tools|=set(re.findall(r"\"name\":\s*\"([a-z_]+(?:__[a-z_]+)*)\"", json.dumps(dd)))
+    if t=="session": preset=dd.get("header",{}).get("agentPreset") or dd.get("agentPreset") or e.get("agentPreset")
+    if t=="model/selection": reason=dd.get("reasoningEffort") or reason
 marks=[x for x in ["subagent","exit_plan_mode","create_goal","todo_write","ask_user_question","session_search","mcp__pdf__pdf_add_text","schedule_create","present","bash"] if x in tools]
 print("   preset in header:", preset, "| permission events:", perm, "| reasoning:", reason, "| tools:", len(tools), "| markers:", marks)'
 done
