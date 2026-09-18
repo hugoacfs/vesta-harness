@@ -50,3 +50,34 @@
       config:
         configPath: /home/hugo/.vesta-harness/hooks.json
         projectDir: /home/hugo
+
+# Own-history search (roadmap T2, fixed 2026-09-12): the shipped composition sets
+# openAt: never, which disables session_search / session_event_search outright.
+# One index file per home; opened at the first search.
+- id: session-query-sqlite
+  config:
+    path: /home/hugo/.vesta-harness/session-search.db
+    openAt: first-search
+
+# Home Assistant MCP (roadmap T9, 2026-09-13): HA 2026.7.4's built-in mcp_server serves
+# Streamable HTTP at /api/mcp — no mcp-proxy bridge needed (initialize + tools/list
+# verified 2026-09-13: 20 tools — HassTurnOn/Off (lock device_class = lock/unlock),
+# HassLightSet, media/remote, HassBroadcast, HassCancelAllTimers, lists, GetLiveContext).
+# Auth: the long-lived token `vesta-mcp` (user hugo, created 2026-09-13, ~10-year expiry)
+# lives in $DSH_HOME/.env as HOME_ASSISTANT_MCP_TOKEN (never in this file); app-boot's
+# loadLayeredEnv materializes that .env into the process environment at launch, so the
+# !!js header resolves. failOnStartupError stays false (default): if the token is absent
+# at a given launch the row retries (reconnect on by default) instead of breaking the
+# plugin tree. Confirm hook: hooks/guard-ha-mcp.py asks before lock / heating /
+# irreversible calls (T9). Staging since 2026-09-13; production since 2026-09-18 (the
+# P12–P14 promotion). With engine fit the `home` tool group sleeps until a keyword,
+# tools_enable or /tools wakes it.
+- insert:
+    - id: mcp-home-assistant
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: home-assistant
+        transport: streamable-http
+        url: http://127.0.0.1:8123/api/mcp
+        headers:
+          Authorization: !!js '`Bearer ${process.env.HOME_ASSISTANT_MCP_TOKEN}`'
