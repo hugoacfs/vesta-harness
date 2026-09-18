@@ -308,11 +308,15 @@ function remoteStreamUrl(): string {
   // back to the origin (root-mounted case); null-origin pages use INTERNAL_BASE.
   const doc = (globalThis as { document?: { baseURI?: string } }).document
   const location = (globalThis as { location?: { origin?: string } }).location
+  const transport = (globalThis as { __DSH_TRANSPORT__?: { streamBaseUrl?: string } }).__DSH_TRANSPORT__
   const origin = location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE
-  const base = typeof doc?.baseURI === 'string' && doc.baseURI !== '' ? doc.baseURI : origin
-  // Base-relative join (leading slash stripped) so the prefix carried by the base
-  // is kept; at the site root (base href "/") this resolves identically to before.
-  const url = new URL(REMOTE_STREAM_MUX_PATH.replace(/^\/+/, ''), base)
+  // A transport override (the desktop shell) names the stream base outright and
+  // keeps upstream's absolute join. Otherwise (Vesta fork) join base-relative,
+  // leading slash stripped, so the prefix carried by the base is kept; at the
+  // site root (base href "/") this resolves identically to upstream.
+  const url = transport?.streamBaseUrl !== undefined
+    ? new URL(REMOTE_STREAM_MUX_PATH, transport.streamBaseUrl)
+    : new URL(REMOTE_STREAM_MUX_PATH.replace(/^\/+/, ''), typeof doc?.baseURI === 'string' && doc.baseURI !== '' ? doc.baseURI : origin)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.href
 }
