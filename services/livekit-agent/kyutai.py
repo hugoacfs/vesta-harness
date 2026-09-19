@@ -52,8 +52,17 @@ PAUSE_THRESHOLD = float(os.environ.get("KYUTAI_PAUSE_THRESHOLD", "0.5"))
 # the last word arrives: finalize this long after the pause, or after the latest word,
 # whichever is later.
 PAUSE_GRACE_S = float(os.environ.get("KYUTAI_PAUSE_GRACE_S", "0.9"))
-# Fallback: finalize this long after the last word if the pause head never fires.
+# A pause prediction ends the turn only once the local VAD no longer hears the caller: a drawn-out
+# word ("thaaan… two hundred") makes the head fire while the caller is still audibly speaking.
+# Past this long after the prediction the turn ends anyway (a VAD held open by steady noise).
+PAUSE_VAD_CAP_S = float(os.environ.get("KYUTAI_PAUSE_VAD_CAP_S", "4.0"))
+# Fallback: finalize this long after the last word if the pause head never fires — but only once
+# the local VAD no longer hears the caller: a filled pause, a drawn-out word or a moment of
+# thinking mid-sentence produces no words yet is still speech (2026-09-19: this fallback cut a
+# caller off mid-sentence five times in one call). Past the cap the turn ends regardless, in case
+# the VAD never releases (steady background noise).
 FINAL_AFTER_SILENCE_S = float(os.environ.get("KYUTAI_FINAL_AFTER_SILENCE_S", "1.2"))
+FINAL_AFTER_SILENCE_MAX_S = float(os.environ.get("KYUTAI_FINAL_AFTER_SILENCE_MAX_S", "8.0"))
 # Audio is sent in chunks of this many samples (80 ms = one mimi frame).
 STT_CHUNK = 1920
 _TONE_NOTE = re.compile(r"\[tone:[^\]]*\]")
@@ -884,10 +893,22 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                     if not self._words:
                         continue
                     now = time.monotonic()
+                    quiet = not self._user_speaking   # the gate VAD no longer hears the caller
+                    since_word = now - self._last_word_at
                     if self._pause_at is not None and now - max(self._pause_at, self._last_word_at) >= PAUSE_GRACE_S:
-                        self._finalize("pause")
-                    elif now - self._last_word_at > FINAL_AFTER_SILENCE_S:
-                        self._finalize("silence")
+                        # The model predicts a pause. The caller must have gone quiet as well, or the
+                        # cap must have passed; otherwise a drawn-out word cuts the sentence in two.
+                        if quiet:
+                            self._finalize("pause")
+                        elif now - self._pause_at >= PAUSE_VAD_CAP_S:
+                            self._finalize("pause-cap")
+                    elif since_word > FINAL_AFTER_SILENCE_S:
+                        # No pause prediction and no new word (a filled pause, thinking mid-sentence):
+                        # the same rule, with its own cap.
+                        if quiet:
+                            self._finalize("silence")
+                        elif since_word > FINAL_AFTER_SILENCE_MAX_S:
+                            self._finalize("silence-cap")
 
             tasks = [asyncio.create_task(send()), asyncio.create_task(recv()), asyncio.create_task(watchdog())]
             try:
