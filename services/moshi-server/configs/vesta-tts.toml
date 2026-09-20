@@ -1,0 +1,34 @@
+# Synthesis only (split of 2026-09-20): the combined server serialised recognition behind a
+# synthesis in flight. Port 8092 keeps serving /api/tts_streaming; recognition moved to vesta-asr.toml.
+# One worker serving both voice models on the 3060: streaming TTS (Kyutai
+# tts-1.6b-en_fr, Python-backed module) at /api/tts_streaming and streaming STT
+# with semantic end-of-turn (Kyutai stt-1b-en_fr) at /api/asr-streaming.
+# Reached only over loopback from the LiveKit agent; the token is not a secret boundary.
+static_dir = "/app/static/"
+log_dir = "/tmp/moshi-logs"
+instance_name = "vesta-tts"
+authorized_ids = ["public_token"]
+
+[modules.tts_py]
+type = "Py"
+path = "/api/tts_streaming"
+text_tokenizer_file = "hf://kyutai/tts-1.6b-en_fr/tokenizer_spm_8k_en_fr_audio.model"
+# Parallel utterances; one call speaks one thing at a time, two leaves headroom for the greeting overlap.
+batch_size = 2
+text_bos_token = 1
+
+[modules.tts_py.py]
+log_folder = "/tmp/moshi-logs"
+# A local folder holding only the voices we use: the Hugging Face glob loads all
+# 901 embeddings onto the GPU (several GB on a 12 GB card). Populate it from the
+# shared cache (see deploy/vesta/README.md); paths below are relative to it.
+voice_folder = "/app/voices"
+default_voice = "expresso/ex03-ex01_calm_001_channel1_1143s.wav"
+# 2.0 is the value the distilled model was trained for; other values do not work.
+cfg_coef = 2.0
+cfg_is_no_text = true
+padding_between = 1
+# Codebooks per frame: 24 is Unmute's production setting (32 max).
+n_q = 24
+# Speech rate: negative is faster. Left at 0; the agent applies its own speed factor.
+padding_bonus = 0

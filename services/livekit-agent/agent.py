@@ -2,6 +2,10 @@
 Vesta voice — LiveKit agent worker.
 
 Semantic turn-taking (LiveKit turn-detector) + Silero VAD + real barge-in, with:
+  Echo: hands-free callers feed Vesta's voice back through the microphone; echo_guard.py
+        silences what is her own voice before the VAD and the recognizer hear it, and the
+        recognizer drops transcripts made of her own recent words (kyutai.py). Interruptions
+        need recognized words (turn handling below), never audio activity alone.
   STT : SenseVoice (via the livekit-media sidecar, OpenAI-compatible, on the 3060)
         — transcripts may end with a perception note like "[tone: happy; laughing]"
   TTS : Kyutai (via the kyutai-tts sidecar, OpenAI-compatible, on the 3060)
@@ -39,16 +43,17 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     JobProcess,
-    RoomInputOptions,
     RunContext,
     WorkerOptions,
     cli,
     function_tool,
     llm,
 )
+from livekit.agents.voice.room_io import RoomOptions
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 from livekit.plugins import openai, silero
 
+import echo_guard
 from fillers import FILLERS, FILLERS_FILE, FillerLibrary
 from livekit.plugins.turn_detector.english import EnglishModel
 
@@ -69,6 +74,10 @@ TTS_SPEED = float(os.environ.get("TTS_SPEED", "1.2"))
 TTS_BACKEND = os.environ.get("TTS_BACKEND", "openai").strip().lower()
 STT_BACKEND = os.environ.get("STT_BACKEND", "sensevoice").strip().lower()
 KYUTAI_WS_URL = os.environ.get("KYUTAI_WS_URL", "ws://127.0.0.1:8092")
+# The streaming recognizer's server. One moshi-server process serialises recognition behind a
+# synthesis in flight (word latency 0.6 s alone, 3–6 s with words lost while a reply renders),
+# so recognition runs on its own process since the split of 2026-09-20; unset = the TTS server.
+KYUTAI_ASR_WS_URL = os.environ.get("KYUTAI_ASR_WS_URL", "").strip() or KYUTAI_WS_URL
 KYUTAI_API_KEY = os.environ.get("KYUTAI_API_KEY", "public_token")
 TONE_NOTES = os.environ.get("TONE_NOTES", "1").strip() not in ("0", "false", "no", "")
 # Second pass (Whisper on the media sidecar) for the text of each finished utterance.
@@ -103,11 +112,15 @@ PROGRESS_PHRASES = [p.strip() for p in os.environ.get("DSH_PROGRESS_PHRASES", "S
 # Filler clips (fillers.py): a "thinking" line when the reply's first words are this late.
 FILLER_THINK_AFTER_S = float(os.environ.get("FILLER_THINK_AFTER_S", "1.0"))
 # Turn-taking: how long after you stop before the agent takes the turn, and how long you must
-# speak over it before it yields. LiveKit defaults are 0.5 / 6.0 / 0.5.
+# speak over it before it yields. LiveKit defaults are 0.5 / 3.0 / 0.5.
 # The streaming STT's pause prediction already implies a pause, so its default endpointing wait is shorter.
 MIN_ENDPOINTING_S = float(os.environ.get("MIN_ENDPOINTING_S", "0.25" if STT_BACKEND == "moshi" else "0.4"))
 MAX_ENDPOINTING_S = float(os.environ.get("MAX_ENDPOINTING_S", "3.0"))
-MIN_INTERRUPTION_S = float(os.environ.get("MIN_INTERRUPTION_S", "0.4"))
+MIN_INTERRUPTION_S = float(os.environ.get("MIN_INTERRUPTION_S", "0.5"))
+# An interruption needs this many recognized words on top of the audio activity (2026-09-20):
+# what the echo guard lets through still has to be transcribed as something the caller said
+# before it stops Vesta mid-sentence. 0 = audio activity alone interrupts (the old behaviour).
+MIN_INTERRUPTION_WORDS = int(os.environ.get("MIN_INTERRUPTION_WORDS", "1"))
 
 SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", (
     "You are Vesta's voice assistant. You are speaking out loud, so keep replies "
@@ -397,6 +410,8 @@ class DshBridge:
             return False
         phrase, pcm = picked
         tts_engine = getattr(self, "_tts", None)
+        if tts_engine is not None and hasattr(tts_engine, "note_spoken"):
+            tts_engine.note_spoken(phrase)   # a clip's words never pass through the synthesizer
         if tts_engine is not None and hasattr(tts_engine, "play_filler") and tts_engine.play_filler(pcm):
             log.info("filler %s (in reply): %r", category, phrase)
             return True
@@ -781,6 +796,7 @@ class DshBridgeStream(llm.LLMStream):
             self._bridge.end_turn()
             if interrupted:
                 # Barge-in: the user cut the reply off; abort the Harness turn but keep its inbox.
+                log.info("harness turn interrupted by the caller after %.1fs", time.monotonic() - (deadline - TURN_TIMEOUT_S))
                 try:
                     await asyncio.shield(self._bridge.interrupt())
                 except Exception:  # noqa: BLE001
@@ -915,7 +931,7 @@ async def entrypoint(ctx: JobContext) -> None:
             if bridge is not None:
                 bridge.tone_note = note
 
-        stt_engine = KyutaiSTT(url=KYUTAI_WS_URL, api_key=KYUTAI_API_KEY, language="en",
+        stt_engine = KyutaiSTT(url=KYUTAI_ASR_WS_URL, api_key=KYUTAI_API_KEY, language="en",
                                tone_url=f"{MEDIA_URL}/audio/transcriptions" if TONE_NOTES else None,
                                refine_url=f"{MEDIA_URL}/audio/refine" if STT_REFINE else None, on_tone=_tone,
                                vad=vad)
@@ -933,19 +949,37 @@ async def entrypoint(ctx: JobContext) -> None:
             base_url=KYUTAI_URL, api_key="not-needed", response_format="pcm",
         )
     log.info("voice backends: stt=%s tts=%s", STT_BACKEND, TTS_BACKEND)
+    if hasattr(stt_engine, "spoken") and hasattr(tts_engine, "spoken"):
+        stt_engine.spoken = tts_engine.spoken   # the self-echo transcript filter reads what she said
+        log.info("self-echo transcript filter: on")
     session = AgentSession(
         stt=stt_engine,
         llm=brain,
         tts=tts_engine,
         vad=vad,
-        # With the streaming STT its pause prediction ends the turn (END_OF_SPEECH after the
-        # final transcript); a late word after a VAD-driven commit would otherwise be held as the
-        # start of the next turn and stall the reply. The batch STT keeps the semantic model.
-        turn_detection="stt" if STT_BACKEND == "moshi" else EnglishModel(),
-        allow_interruptions=True,          # barge-in: user speech cuts off the reply
-        min_interruption_duration=MIN_INTERRUPTION_S,
-        min_endpointing_delay=MIN_ENDPOINTING_S,
-        max_endpointing_delay=MAX_ENDPOINTING_S,
+        # LiveKit's own guard against echo — ignore interruptions for a while after the agent
+        # starts speaking, until the browser's canceller has settled — is redundant beside the
+        # echo guard and would swallow a real barge-in in a reply's first seconds.
+        aec_warmup_duration=0.0,
+        turn_handling={
+            # With the streaming STT its pause prediction ends the turn (END_OF_SPEECH after the
+            # final transcript); a late word after a VAD-driven commit would otherwise be held as
+            # the start of the next turn and stall the reply. The batch STT keeps the semantic model.
+            "turn_detection": "stt" if STT_BACKEND == "moshi" else EnglishModel(),
+            "endpointing": {"mode": "fixed", "min_delay": MIN_ENDPOINTING_S, "max_delay": MAX_ENDPOINTING_S},
+            # Barge-in: audio activity over the reply plus recognized words. "adaptive" would need
+            # LiveKit's hosted inference, so the VAD decides; a false interruption (nothing
+            # transcribed within 2 s) resumes the reply.
+            "interruption": {
+                "enabled": True, "mode": "vad", "min_duration": MIN_INTERRUPTION_S,
+                "min_words": MIN_INTERRUPTION_WORDS, "discard_audio_if_uninterruptible": True,
+                "resume_false_interruption": True, "false_interruption_timeout": 2.0,
+            },
+            # Off: LiveKit 1.8 starts the "LLM" on interim transcripts and discards the attempt
+            # when the final differs — with the Harness as the model that is a real turn started
+            # and aborted, twice the work on the 3090 and an aborted turn in the session log.
+            "preemptive_generation": {"enabled": False},
+        },
     )
     # Keep the agent alive across browser reconnects: the default closes the
     # session when the linked participant drops, which left later joins of the
@@ -953,12 +987,22 @@ async def entrypoint(ctx: JobContext) -> None:
     await session.start(
         agent=Assistant(bridged=bridge is not None),
         room=ctx.room,
-        room_input_options=RoomInputOptions(close_on_disconnect=False),
+        room_options=RoomOptions(close_on_disconnect=False),
     )
+    try:
+        echo_guard.install(session)
+    except Exception as e:  # noqa: BLE001 — the call runs without the guard rather than not at all
+        log.warning("echo guard not installed: %s", e)
     _follow_callers(ctx, session)
-    if hasattr(stt_engine, "set_agent_speaking"):
-        # The listener gate (kyutai.py) holds room audio while Vesta speaks and the caller is silent.
-        session.on("agent_state_changed", lambda ev: stt_engine.set_agent_speaking(ev.new_state == "speaking"))
+    def _on_state(ev: Any) -> None:
+        log.info("agent state: %s -> %s", ev.old_state, ev.new_state)
+        if hasattr(stt_engine, "set_agent_speaking"):
+            # The listener gate (kyutai.py) holds room audio while Vesta speaks and the caller is silent.
+            stt_engine.set_agent_speaking(ev.new_state == "speaking")
+
+    session.on("agent_state_changed", _on_state)
+    session.on("user_state_changed", lambda ev: log.info("user state: %s -> %s", ev.old_state, ev.new_state))
+    session.on("user_input_transcribed", lambda ev: log.info("user transcript: %r", ev.transcript[:80]) if ev.is_final else None)
     if bridge is not None:
         bridge.attach(session, tts_engine, fillers)   # passive speech, approval questions and fillers need the running session
     greeting = BRIDGE_GREETING if bridge is not None else GREETING

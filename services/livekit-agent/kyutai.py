@@ -66,6 +66,60 @@ FINAL_AFTER_SILENCE_MAX_S = float(os.environ.get("KYUTAI_FINAL_AFTER_SILENCE_MAX
 # Audio is sent in chunks of this many samples (80 ms = one mimi frame).
 STT_CHUNK = 1920
 _TONE_NOTE = re.compile(r"\[tone:[^\]]*\]")
+# Self-echo transcript filter (2026-09-20): words the recognizer hears while Vesta speaks (or just
+# after) that are Vesta's own recent words are her voice coming back through the caller's
+# speaker, not the caller. An utterance is judged once it has this many words (or at its end);
+# it is echo when this share of its words was spoken by Vesta within SELF_ECHO_WINDOW_S. A
+# short utterance (fewer words than the quorum) is judged against a tighter window, so a
+# caller's "okay" right after Vesta said "okay" still gets through.
+SELF_ECHO_QUORUM = int(os.environ.get("KYUTAI_SELF_ECHO_QUORUM", "3"))
+SELF_ECHO_SHARE = float(os.environ.get("KYUTAI_SELF_ECHO_SHARE", "0.75"))
+# Measured from when a word went to the synthesizer; a long reply plays out up to tens of seconds
+# after its words were generated, so the window is long and the overlap rule below does the work.
+SELF_ECHO_WINDOW_S = float(os.environ.get("KYUTAI_SELF_ECHO_WINDOW_S", "45.0"))
+SELF_ECHO_SHORT_WINDOW_S = float(os.environ.get("KYUTAI_SELF_ECHO_SHORT_WINDOW_S", "4.0"))
+# An utterance is only ever judged echo when at least this share of its audio overlapped Vesta's
+# playback (plus the echo lag): a caller answering after she finished, with her own words
+# ("the blue one", "SUV"), is never dropped.
+SELF_ECHO_MIN_OVERLAP = float(os.environ.get("KYUTAI_SELF_ECHO_MIN_OVERLAP", "0.5"))
+SELF_ECHO_LAG_S = float(os.environ.get("KYUTAI_SELF_ECHO_LAG_S", "0.9"))
+# Spoken answers and commands that must always reach the harness, however recently Vesta said
+# the same word ("Say yes to allow it" → "yes").
+PROTECTED_WORDS = frozenset((os.environ.get("KYUTAI_PROTECTED_WORDS") or
+    "yes yeah yep yup no nope nah ok okay stop cancel approve approved deny denied allow allowed sure fine go ahead never mind").split())
+_WORD_CHARS = re.compile(r"[^a-z0-9']+")
+
+
+def _norm_words(text: str) -> list[str]:
+    return [w for w in _WORD_CHARS.sub(" ", text.lower()).split() if w]
+
+
+class SpokenLog:
+    """The words Vesta has spoken, with the moment each went to the synthesizer (a clip's
+    words are noted when it is queued). Shared by the TTS engine that fills it and the STT
+    streams that consult it."""
+
+    def __init__(self, keep: int = 600) -> None:
+        self._words: list[tuple[str, float]] = []
+        self._keep = keep
+
+    def add(self, text: str, at: float | None = None) -> None:
+        now = at if at is not None else time.monotonic()
+        for w in _norm_words(text):
+            self._words.append((w, now))
+        if len(self._words) > self._keep:
+            self._words = self._words[-self._keep:]
+
+    def recent(self, within: float) -> set[str]:
+        cut = time.monotonic() - within
+        return {w for w, t in self._words if t >= cut}
+
+    def spoke_within(self, seconds: float, before: float | None = None) -> bool:
+        """Whether a word went out within `seconds` before `before` (default: now)."""
+        if not self._words:
+            return False
+        end = before if before is not None else time.monotonic()
+        return any(end - seconds <= t <= end for _, t in reversed(self._words[-200:]))
 
 
 def _headers(api_key: str) -> dict[str, str]:
@@ -78,6 +132,11 @@ def _headers(api_key: str) -> dict[str, str]:
 TTS_PREROLL_S = float(os.environ.get("TTS_PREROLL_S", "0.35"))
 TTS_LEAD_LOW_S = float(os.environ.get("TTS_LEAD_LOW_S", "0.15"))
 TTS_LEAD_HIGH_S = float(os.environ.get("TTS_LEAD_HIGH_S", "0.5"))
+# Text flow control (2026-09-20): the server renders 2–3× faster than real time and the streaming
+# recognizer shares its GPU, so during a long reply the caller's words stalled until generation
+# finished — a barge-in was heard ten seconds late. Words are held back while the generated
+# audio leads playback by more than this; the model's text waits in the queue meanwhile.
+TTS_MAX_LEAD_S = float(os.environ.get("TTS_MAX_LEAD_S", "3.0"))
 # wsola: pitch-preserving time stretch (audiotsm); resample: the old linear resample (pitch follows speed).
 TTS_STRETCH = os.environ.get("TTS_STRETCH", "wsola").strip().lower()
 STARVE_LEAD_S = 0.02    # the playout buffer is considered empty below this lead
@@ -165,6 +224,14 @@ class _Pacer:
     def lead(self, now: float) -> float:
         """Playback seconds pushed but not yet played, by the wall clock since the first push."""
         return self._pushed / SAMPLE_RATE - (now - self._t_start)
+
+    def generation_lead(self, now: float) -> float:
+        """Server-audio seconds generated beyond what playback has consumed (server seconds:
+        playback at speed s consumes s of them per wall second)."""
+        generated = self.samples_in / SAMPLE_RATE
+        if not self._released:
+            return generated
+        return generated - (now - self._t_start) * self._stretch.speed
 
     def feed(self, pcm: np.ndarray) -> None:
         self.samples_in += len(pcm)
@@ -257,6 +324,11 @@ class KyutaiTTS(tts.TTS):
         self._speed = speed
         self._active: KyutaiSynthesizeStream | None = None   # the reply stream currently open, if any
         self._gate: tuple[asyncio.AbstractEventLoop, asyncio.Semaphore] | None = None   # see _channel_gate
+        self.spoken = SpokenLog()   # every word sent to the server, plus the clips' lines (note_spoken)
+
+    def note_spoken(self, text: str) -> None:
+        """Record the words of a pre-rendered clip or any line spoken outside this engine."""
+        self.spoken.add(text)
 
     @property
     def label(self) -> str:
@@ -317,12 +389,14 @@ class KyutaiTTS(tts.TTS):
         await self._speak(words, chunks.append)
         return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
 
-    async def _speak(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float = 30.0) -> None:
-        """Drive one utterance: words in (None ends it), float32 pcm chunks out via on_pcm."""
+    async def _speak(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float = 30.0, throttle=None) -> None:
+        """Drive one utterance: words in (None ends it), float32 pcm chunks out via on_pcm.
+        throttle: a callable giving the generation lead in seconds; words wait while it exceeds
+        TTS_MAX_LEAD_S."""
         async with self._channel_gate():
-            await self._speak_gated(words, on_pcm, ready_deadline)
+            await self._speak_gated(words, on_pcm, ready_deadline, throttle)
 
-    async def _speak_gated(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float) -> None:
+    async def _speak_gated(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float, throttle=None) -> None:
         try:
             ws = await websockets.connect(self._ws_url(), additional_headers=_headers(self._api_key), max_size=None, open_timeout=ready_deadline)
         except Exception as e:  # noqa: BLE001
@@ -334,6 +408,10 @@ class KyutaiTTS(tts.TTS):
                     if word is None:
                         await ws.send(msgpack.packb({"type": "Eos"}))
                         return
+                    if throttle is not None:
+                        while throttle() > TTS_MAX_LEAD_S:
+                            await asyncio.sleep(0.1)
+                    self.spoken.add(word)
                     await ws.send(msgpack.packb({"type": "Text", "text": word}))
 
             async def recv() -> None:
@@ -454,7 +532,7 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
                         if not segment_open:
                             segment_open = True
                             output_emitter.start_segment(segment_id=utils.shortuuid())
-                        speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm))
+                        speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm, throttle=lambda: pacer.generation_lead(time.monotonic())))
                     if speaking:
                         for w in tail:
                             words.put_nowait(w)
@@ -470,7 +548,7 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
                         if not segment_open:
                             segment_open = True
                             output_emitter.start_segment(segment_id=utils.shortuuid())
-                        speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm))
+                        speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm, throttle=lambda: pacer.generation_lead(time.monotonic())))
                     if last_word_at and now - last_word_at > TEXT_GAP_S:
                         text_gaps += 1   # the model paused mid-reply; the pre-roll is what covers this
                     last_word_at = now
@@ -541,10 +619,18 @@ class KyutaiSTT(stt.STT):
         self._on_tone = on_tone
         self._vad = vad if GATE_WHILE_SPEAKING else None
         self.agent_speaking = False
+        self.agent_spoke_until = 0.0           # when she last stopped speaking
+        self.spoken: SpokenLog | None = None   # the TTS engine's log, set by the agent; None = no filter
 
     def set_agent_speaking(self, speaking: bool) -> None:
         """Told by the agent session; drives the listener gate of every open stream."""
+        if self.agent_speaking and not speaking:
+            self.agent_spoke_until = time.monotonic()
         self.agent_speaking = speaking
+
+    def playing_at(self, now: float) -> bool:
+        """Whether her audio (or its echo, up to the lag) is on the caller's side at `now`."""
+        return self.agent_speaking or now - self.agent_spoke_until < SELF_ECHO_LAG_S
 
     @property
     def label(self) -> str:
@@ -668,6 +754,71 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         self._open_until = 0.0               # keep streaming this long after the caller stops
         self._gated = False                  # for the log line on transitions
         self._held_total = 0                 # frames held this call (log)
+        # Self-echo filter: the utterance's verdict ("caller" / "echo", None while undecided) and
+        # the events held back until it is known.
+        self._verdict: str | None = None
+        self._pending_start = False
+        self._pending_interim: str | None = None
+        self._playing: list[tuple[float, bool]] = []   # (frame time, her audio on the caller's side)
+
+    def _overlap(self) -> float:
+        """Share of this utterance's frames (from a lag before its first word) during her playback."""
+        start = self._utterance_start - SELF_ECHO_LAG_S
+        flags = [p for t, p in self._playing if t >= start]
+        return sum(flags) / len(flags) if flags else 0.0
+
+    def _judge(self, final: bool) -> str | None:
+        spoken = self._kyutai.spoken
+        if spoken is None:
+            return "caller"
+        if not self._words:
+            # start-of-speech arrives before the first word is stored: no verdict yet
+            return "caller" if final else None
+        words = _norm_words(" ".join(self._words))
+        if not words:
+            return "caller" if final else None
+        if len(words) < SELF_ECHO_QUORUM:
+            if not final:
+                return None
+            if all(w in PROTECTED_WORDS for w in words):
+                return "caller"
+            if not spoken.spoke_within(SELF_ECHO_SHORT_WINDOW_S, before=self._utterance_start):
+                return "caller"
+        elif not spoken.spoke_within(SELF_ECHO_WINDOW_S):
+            return "caller"
+        if self._overlap() < SELF_ECHO_MIN_OVERLAP:
+            return "caller"
+        recent = spoken.recent(SELF_ECHO_WINDOW_S)
+        hits = sum(1 for w in words if w in recent)
+        return "echo" if hits >= SELF_ECHO_SHARE * len(words) else "caller"
+
+    def _emit_gated(self, kind: stt.SpeechEventType, text: str = "") -> None:
+        """Start-of-speech and interim events wait for the self-echo verdict; a caller's are then
+        released in order, an echo's never leave."""
+        if self._verdict is None:
+            self._verdict = self._judge(final=False)
+        elif self._verdict == "echo" and self._judge(final=False) == "caller":
+            # the caller is talking over her: the first words were her echo, the rest are not
+            self._verdict = "caller"
+            self._pending_start = True   # its start never went out
+        if self._verdict is None:
+            if kind == stt.SpeechEventType.START_OF_SPEECH:
+                self._pending_start = True
+            elif kind == stt.SpeechEventType.INTERIM_TRANSCRIPT:
+                self._pending_interim = text
+            return
+        if self._verdict == "echo":
+            return
+        self._release_pending()
+        self._emit(kind, text)
+
+    def _release_pending(self) -> None:
+        if self._pending_start:
+            self._pending_start = False
+            self._emit(stt.SpeechEventType.START_OF_SPEECH)
+        if self._pending_interim is not None:
+            text, self._pending_interim = self._pending_interim, None
+            self._emit(stt.SpeechEventType.INTERIM_TRANSCRIPT, text)
 
     def _emit(self, kind: stt.SpeechEventType, text: str = "") -> None:
         ev = stt.SpeechEvent(type=kind, request_id="", alternatives=[stt.SpeechData(language=self._language, text=text)] if text or kind in (stt.SpeechEventType.INTERIM_TRANSCRIPT, stt.SpeechEventType.FINAL_TRANSCRIPT) else [])
@@ -690,6 +841,31 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
     def _finalize(self, reason: str) -> None:
         if not self._words:
             return
+        early = self._verdict
+        verdict = self._judge(final=True)           # every word of the utterance, not just the quorum
+        self._verdict = None
+        self._pending_start = False
+        self._pending_interim = None
+        if verdict == "echo":
+            log.info("kyutai stt: dropped self-echo (%s%s) %.1fs after first word, overlap %d%%: %r", reason,
+                     ", late" if early == "caller" else "", time.monotonic() - self._utterance_start,
+                     int(100 * self._overlap()), " ".join(self._words)[:80])
+            if early == "caller":
+                # its start and interims already went out: close the turn with nothing in it
+                self._emit(stt.SpeechEventType.FINAL_TRANSCRIPT, "")
+                self._emit(stt.SpeechEventType.END_OF_SPEECH)
+            self._words = []
+            self._speech_started = False
+            self._pause_at = None
+            self._audio = []
+            if self._spec is not None:
+                self._spec.cancel()
+                self._spec = None
+            if self._spec_timer is not None:
+                self._spec_timer.cancel()
+                self._spec_timer = None
+            return
+        self._release_pending()
         text = " ".join(self._words).strip()
         words = len(self._words)
         started = self._utterance_start
@@ -812,6 +988,10 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                     samples = np.frombuffer(frame.data, dtype=np.int16).astype(np.float32) / 32768.0
                     if frame.num_channels > 1:
                         samples = samples.reshape(-1, frame.num_channels).mean(axis=1)
+                    now_f = time.monotonic()
+                    self._playing.append((now_f, self._kyutai.playing_at(now_f)))
+                    if len(self._playing) > 1200:   # ~a minute of frames
+                        self._playing = self._playing[-600:]
                     if self._speech_started:
                         self._audio.append(samples)
                     else:
@@ -864,10 +1044,10 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                             self._audio = self._lead   # the onset was spoken before this word arrived
                             self._lead = []
                             self._lead_samples = 0
-                            self._emit(stt.SpeechEventType.START_OF_SPEECH)
+                            self._emit_gated(stt.SpeechEventType.START_OF_SPEECH)
                         self._words.append(word)
                         self._last_word_at = time.monotonic()
-                        self._emit(stt.SpeechEventType.INTERIM_TRANSCRIPT, " ".join(self._words))
+                        self._emit_gated(stt.SpeechEventType.INTERIM_TRANSCRIPT, " ".join(self._words))
                         if self._pause_at is not None and self._kyutai._refine_url:
                             # Words after the pause (the model's emission lag) make the pass
                             # started at the pause stale; they come in a burst, so wait for the

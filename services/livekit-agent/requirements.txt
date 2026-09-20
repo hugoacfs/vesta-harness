@@ -1,11 +1,11 @@
-# livekit-* left unpinned (co-released, mutually compatible); pin from `pip freeze`
-# once a build is confirmed working. aiohttp is the bridge WebSocket client
-# (already a livekit-agents dependency; listed so the bridge does not rely on
-# a transitive pin).
-livekit-agents
-livekit-plugins-openai
-livekit-plugins-silero
-livekit-plugins-turn-detector
+# livekit-* pinned to the release the 2026-09-20 build was verified with (turn handling,
+# interruption gates and the audio input/output chains are used from these versions; an
+# unpinned rebuild had moved 1.8.0 → 1.8.2 by itself). aiohttp is the bridge WebSocket client
+# (already a livekit-agents dependency; listed so the bridge does not rely on a transitive pin).
+livekit-agents==1.8.2
+livekit-plugins-openai==1.8.2
+livekit-plugins-silero==1.8.2
+livekit-plugins-turn-detector==1.8.2
 httpx>=0.27
 aiohttp>=3.9
 msgpack>=1.0

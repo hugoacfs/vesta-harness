@@ -18,6 +18,9 @@ Environment: GREETING_WAIT_S (default 30) how long to wait for the greeting to f
 first WAV; PLAY_AFTER_S (default 0) with GREETING_WAIT_S=0 plays the first WAV this long after
 joining, i.e. over the greeting, for a barge-in check; BARGE_AFTER_S (default 0) plays the second
 WAV this long after the first reply starts, i.e. over it. Silence is streamed between WAVs.
+ECHO_GAIN (default 0) plays the agent's own audio back into the microphone, delayed by
+ECHO_DELAY_MS (default 220) — a laptop or phone on its speaker without echo cancellation;
+0.5 is a loud speakerphone. A WAV list of "-" plays nothing: greeting, echo and settle only.
 
 Each WAV is one spoken turn, played after the previous reply ended; the settle
 wait at the end catches speech the agent produces without being asked (the
@@ -29,11 +32,16 @@ import sys
 import time
 import wave
 
+import numpy as np
 from livekit import api, rtc
 
 LIVEKIT_URL = "ws://192.168.0.2:7880"
 PREFIX = os.environ.get("ROOM_PREFIX", os.environ.get("DSH_ROOM_PREFIX", "dsh-"))   # staging: dshs-
 AGENT_NAME = os.environ.get("AGENT_NAME", "")                                       # empty: automatic dispatch
+# Speakerphone simulation: the agent's audio, as received, goes back out through the
+# microphone track this much later and this much quieter (0 = off).
+ECHO_GAIN = float(os.environ.get("ECHO_GAIN", "0"))
+ECHO_DELAY_MS = float(os.environ.get("ECHO_DELAY_MS", "220"))
 
 
 def token(room: str) -> str:
@@ -49,19 +57,73 @@ def token(room: str) -> str:
     return t.to_jwt()
 
 
-async def play(source: rtc.AudioSource, path: str, lock: asyncio.Lock) -> None:
-    async with lock:   # the silence feeder must not capture into the source at the same time
+class Mixer:
+    """Feeds the microphone track a continuous timeline of 10 ms frames: the WAV being played,
+    plus the delayed echo of the agent's audio when ECHO_GAIN is set, silence otherwise."""
+
+    def __init__(self, source: rtc.AudioSource, rate: int, channels: int) -> None:
+        self.source, self.rate, self.channels = source, rate, channels
+        self.n = rate // 100
+        self.wav_q: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=50)
+        self.echo: list[np.ndarray] = []
+        self.pending = np.zeros(int(ECHO_DELAY_MS / 1000 * rate), dtype=np.float32) if ECHO_GAIN > 0 else np.zeros(0, dtype=np.float32)
+        self.echo_ms = 0.0
+
+    def add_echo(self, frame: rtc.AudioFrame) -> None:
+        s = np.frombuffer(frame.data, dtype=np.int16).astype(np.float32) / 32768.0
+        if frame.num_channels > 1:
+            s = s.reshape(-1, frame.num_channels).mean(axis=1)
+        if frame.sample_rate != self.rate:
+            n = max(1, int(round(len(s) * self.rate / frame.sample_rate)))
+            s = np.interp(np.linspace(0, 1, n, endpoint=False), np.linspace(0, 1, len(s), endpoint=False), s).astype(np.float32)
+        self.echo.append(s)
+
+    def _take_echo(self) -> np.ndarray:
+        while len(self.pending) < self.n and self.echo:
+            self.pending = np.concatenate([self.pending, self.echo.pop(0)])
+        if len(self.pending) >= self.n:
+            out, self.pending = self.pending[:self.n], self.pending[self.n:]
+            return out
+        out = np.concatenate([self.pending, np.zeros(self.n - len(self.pending), dtype=np.float32)])
+        self.pending = np.zeros(0, dtype=np.float32)
+        return out
+
+    async def run(self) -> None:
+        while True:
+            chunk = np.zeros(self.n, dtype=np.float32)
+            try:
+                chunk = chunk + self.wav_q.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            if ECHO_GAIN > 0:
+                e = self._take_echo()
+                if np.any(e):
+                    self.echo_ms += self.n / self.rate * 1000
+                chunk = chunk + ECHO_GAIN * e
+            data = (np.clip(chunk, -1.0, 1.0) * 32767).astype("<i2")
+            if self.channels > 1:
+                data = np.repeat(data, self.channels)
+            frame = rtc.AudioFrame(data=data.tobytes(), sample_rate=self.rate, num_channels=self.channels, samples_per_channel=self.n)
+            await self.source.capture_frame(frame)   # paced by the source's own (short) queue
+
+    async def play(self, path: str) -> None:
         with wave.open(path, "rb") as wav:
-            rate, channels, width = wav.getframerate(), wav.getnchannels(), wav.getsampwidth()
-            assert width == 2, "16-bit PCM expected"
-            chunk = rate // 100  # 10 ms
+            assert wav.getsampwidth() == 2, "16-bit PCM expected"
+            assert wav.getframerate() == self.rate, "every WAV must share the first one's rate"
+            ch = wav.getnchannels()
             while True:
-                data = wav.readframes(chunk)
+                data = wav.readframes(self.n)
                 if not data:
                     break
-                frame = rtc.AudioFrame(data=data, sample_rate=rate, num_channels=channels, samples_per_channel=len(data) // (2 * channels))
-                await source.capture_frame(frame)
-        await source.wait_for_playout()
+                s = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                if ch > 1:
+                    s = s.reshape(-1, ch).mean(axis=1)
+                if len(s) < self.n:
+                    s = np.concatenate([s, np.zeros(self.n - len(s), dtype=np.float32)])
+                await self.wav_q.put(s)
+        while not self.wav_q.empty():
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.15)   # the mixer never stops feeding, so wait_for_playout() would never return
 
 
 async def main(session_id: str, wav_path: str, wait_s: float) -> int:
@@ -71,8 +133,13 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
     if not session_id.startswith("session-"):
         session_id = f"session-{session_id}"
     room_name = f"{PREFIX}{session_id}"
-    with wave.open(wav_path.split(",")[0], "rb") as wav:
-        rate, channels = wav.getframerate(), wav.getnchannels()   # every WAV must share this format
+    paths = [] if wav_path == "-" else wav_path.split(",")
+    rate, channels = 24000, 1
+    if paths:
+        with wave.open(paths[0], "rb") as wav:
+            rate, channels = wav.getframerate(), wav.getnchannels()   # every WAV must share this format
+    source = rtc.AudioSource(rate, channels, queue_size_ms=100)   # short: keeps the mixer near real time
+    mixer = Mixer(source, rate, channels)
     room = rtc.Room()
     states: list[tuple[float, str]] = []
     heard = {"frames": 0, "ms": 0.0}
@@ -95,6 +162,8 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
         async for event in stream:
             heard["frames"] += 1
             heard["ms"] += event.frame.samples_per_channel / event.frame.sample_rate * 1000
+            if ECHO_GAIN > 0:
+                mixer.add_echo(event.frame)
 
     if AGENT_NAME:
         # livekit-server 1.13 ignores the token's dispatch claim: ask the API for an explicit
@@ -114,21 +183,11 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
         if state:
             states.append((0.0, state))
             print(f"  [  0.0s] agent state: {state} (on join)", flush=True)
-    source = rtc.AudioSource(rate, channels)
     track = rtc.LocalAudioTrack.create_audio_track("microphone", source)
     await room.local_participant.publish_track(track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
-    # A browser microphone never stops: feed silence between the WAVs so the agent's listener
-    # sees a continuous timeline (its gate and keepalive only make sense against one).
-    lock = asyncio.Lock()
-
-    async def silence() -> None:
-        frame = rtc.AudioFrame.create(rate, channels, rate // 50)   # 20 ms of zeros
-        while True:
-            async with lock:
-                await source.capture_frame(frame)   # paced by the source's own queue
-            await asyncio.sleep(0)
-
-    feeder = asyncio.ensure_future(silence())
+    # A browser microphone never stops: the mixer feeds silence between the WAVs (and the
+    # simulated echo) so the agent's listener sees a continuous timeline.
+    feeder = asyncio.ensure_future(mixer.run())
     # Let the agent link and, when the harness warms the prefix with a greeting turn,
     # finish speaking that greeting (speaking → listening) before the first question.
     greet_deadline = time.monotonic() + float(os.environ.get("GREETING_WAIT_S", "30"))
@@ -150,9 +209,9 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
     settle_s = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
     if play_after > 0:
         await asyncio.sleep(max(0.0, play_after - (time.monotonic() - t0)))
-    for n, path in enumerate(wav_path.split(","), 1):
+    for n, path in enumerate(paths, 1):
         print(f"playing {path} (round {n}) at {time.monotonic() - t0:.1f}s...", flush=True)
-        await play(source, path, lock)
+        await mixer.play(path)
         asked = time.monotonic()
         print("question played; waiting for the reply...", flush=True)
         first_speech = None
@@ -178,6 +237,8 @@ async def main(session_id: str, wav_path: str, wait_s: float) -> int:
     feeder.cancel()
     await room.disconnect()
     print(f"agent audio received: {heard['frames']} frames, {heard['ms'] / 1000:.1f}s")
+    if ECHO_GAIN > 0:
+        print(f"echo played back into the microphone: {mixer.echo_ms / 1000:.1f}s at gain {ECHO_GAIN:g}, delay {ECHO_DELAY_MS:.0f} ms")
     print("states:", " -> ".join(s for _, s in states) or "(none)")
     spoke = heard["ms"] > 500
     return 0 if spoke else 2

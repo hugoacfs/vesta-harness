@@ -6,26 +6,50 @@
 name: moshi-server
 
 services:
+  # Split of 2026-09-20: one process each. The combined server (configs/vesta.toml, kept for
+  # reference) served both /api/tts_streaming and /api/asr-streaming on 8092 and serialised
+  # recognition behind a synthesis in flight (word latency 0.6 s alone, 3–6 s with words lost
+  # while a reply rendered). Synthesis stays on 8092; recognition is its own process on 8093
+  # (the workers' KYUTAI_ASR_WS_URL). Memory on the 3060 is unchanged overall: the two
+  # processes hold what the one did (about 4.6 + 2.9 GB).
   moshi-server:
     build:
       context: /home/hugo/code/vesta-harness/services/moshi-server
       dockerfile: Dockerfile
     container_name: moshi-server
     restart: unless-stopped
-    # Host networking bound to loopback only (like livekit-agent): the agent dials
-    # ws://127.0.0.1:8092, nothing is exposed beyond the host, and model pulls use
-    # the host's resolver. 8090 is nginx.
     network_mode: host
-    command: ["worker", "--config", "/app/configs/vesta.toml", "--addr", "127.0.0.1", "--port", "8092"]
+    command: ["worker", "--config", "/app/configs/vesta-tts.toml", "--addr", "127.0.0.1", "--port", "8092"]
     env_file: [.env]
     environment:
       - HF_HOME=/app/cache
       - HF_HUB_CACHE=/app/cache/hub
     volumes:
       - /srv/ai/compose/kyutai-tts/cache:/app/cache
-      # Tuning without a rebuild: the config and the voice folder live beside the compose file.
       - /srv/ai/compose/moshi-server/configs:/app/configs:ro
       - /srv/ai/compose/moshi-server/voices:/app/voices:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["GPU-4c4e6e17-74ee-b26e-9b6a-a047eaaa74e0"]  # RTX 3060 only
+              capabilities: [gpu]
+
+  moshi-asr:
+    image: moshi-server-moshi-server   # the image the service above builds
+    container_name: moshi-asr
+    restart: unless-stopped
+    network_mode: host
+    command: ["worker", "--config", "/app/configs/vesta-asr.toml", "--addr", "127.0.0.1", "--port", "8093"]
+    env_file: [.env]
+    environment:
+      - HF_HOME=/app/cache
+      - HF_HUB_CACHE=/app/cache/hub
+    volumes:
+      - /srv/ai/compose/kyutai-tts/cache:/app/cache
+      - /srv/ai/compose/moshi-server/configs:/app/configs:ro
+    depends_on: [moshi-server]
     deploy:
       resources:
         reservations:
