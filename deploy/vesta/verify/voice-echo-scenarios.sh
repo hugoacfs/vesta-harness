@@ -33,9 +33,12 @@ if len(lines)>60: print("   ... +%d more lines" % (len(lines)-40))'; }
 docker cp deploy/vesta/bin/vesta-call-check $C:/tmp/call-check.py
 docker cp /srv/ai/compose/livekit-voice/probes/say.py $C:/tmp/say.py
 docker cp deploy/vesta/bin/vesta-voice-pause-probe.py $C:/tmp/mkpause.py
-docker exec $C test -f /tmp/q_time.wav || docker exec $C python /tmp/say.py "What time is it right now?" /tmp/q_time.wav
-docker exec $C test -f /tmp/q_joke.wav || docker exec $C python /tmp/say.py "Actually, never mind that. Tell me a short joke instead." /tmp/q_joke.wav "Tell me about the history of London in five or six sentences." /tmp/q_london.wav
-docker exec $C test -f /tmp/q_ask.wav || docker exec $C python /tmp/say.py "Please ask me whether I prefer the red one or the blue one, then wait for my answer." /tmp/q_ask.wav "The blue one." /tmp/a_blue.wav
+say() { docker exec $C test -f "$2" || docker exec $C python /tmp/say.py "$1" "$2"; }   # one check per WAV
+say "What time is it right now?" /tmp/q_time.wav
+say "Actually, never mind that. Tell me a short joke instead." /tmp/q_joke.wav
+say "Tell me about the history of London in five or six sentences." /tmp/q_london.wav
+say "Please ask me whether I prefer the red one or the blue one, then wait for my answer." /tmp/q_ask.wav
+say "The blue one." /tmp/a_blue.wav
 docker exec $C test -f /tmp/pause.wav || { docker exec $C python /tmp/say.py "I wouldn't like to pay more than" /tmp/half1.wav "two hundred and seventy pounds a month." /tmp/half2.wav; docker exec $C python /tmp/mkpause.py /tmp/half1.wav /tmp/half2.wav /tmp/pause.wav 4.5; }
 run() { # name env... -- caller args
   local name=$1; shift; local envs=(); while [ "$1" != "--" ]; do envs+=(-e "$1"); shift; done; shift

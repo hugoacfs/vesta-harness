@@ -45,6 +45,9 @@ MAX_LAG_S = float(os.environ.get("ECHO_MAX_LAG_S", "1.5"))
 RHO_ON = float(os.environ.get("ECHO_RHO_ON", "0.45"))
 RHO_HOLD = float(os.environ.get("ECHO_RHO_HOLD", "0.25"))
 HOLD_S = float(os.environ.get("ECHO_HOLD_S", "0.3"))
+# Once the caller is heard over her, frames keep passing this long even where a syllable's dip
+# falls back under the double-talk test, so their speech is not chopped frame by frame.
+CALLER_HOLD_S = float(os.environ.get("ECHO_CALLER_HOLD_S", "0.5"))
 # The guard is armed while the agent has played audio within this long.
 TAIL_S = float(os.environ.get("ECHO_TAIL_S", "1.0"))
 # Double talk: with her voice in the frame, what remains once the least-squares estimate of it
@@ -192,6 +195,7 @@ class EchoGate(AudioInput):
         self._lock: int | None = None          # locked lag in samples
         self._lag_votes: list[int] = []
         self._hold_until = 0.0
+        self._caller_until = 0.0
         self._ratios: list[float] = []         # mic/reference level ratios seen while armed
         self._lost_since: float | None = None
         # per armed stretch, for the log line
@@ -258,17 +262,26 @@ class EchoGate(AudioInput):
             r_frame = self._reference.segment(now - lag / RATE, len(pcm))
             residual = pcm - gain * r_frame
             echo_est = abs(gain) * _rms(r_frame)
-            if _rms(residual) > max(FLOOR, DOUBLE_TALK_RATIO * echo_est):
+            # The caller is in the frame when the residual dwarfs the echo estimate and, once the
+            # echo return is known, the frame is louder than echo alone ever is: the residual test
+            # by itself misfires on codec-distorted echo.
+            level_floor = float(np.percentile(self._ratios, 30)) if len(self._ratios) >= 6 else None
+            louder = level_floor is None or rms_x > LEVEL_MARGIN * level_floor * rms_r
+            if _rms(residual) > max(FLOOR, DOUBLE_TALK_RATIO * echo_est) and louder:
+                self._caller_until = now + CALLER_HOLD_S
+            if now < self._caller_until:
                 self._over += 1
                 return self._cleaned(frame, gain, r_frame)
             echo = True
             self._gated_corr += 1
         else:
-            # No correlated echo. A canceller's residual is weakly correlated but never louder
-            # than the echo return seen so far; the caller is. Only with a locked lag: until
-            # then nothing is known about this call's echo path.
+            # No confident echo. A canceller's residual still correlates a little at the locked
+            # lag and is never louder than the echo return seen so far; the caller's own voice
+            # correlates with nothing she played and passes whatever its level. Only with a
+            # locked lag: until then nothing is known about this call's echo path.
             level_floor = float(np.percentile(self._ratios, 30)) if self._lock is not None and len(self._ratios) >= 6 else None
-            echo = level_floor is not None and rms_x <= LEVEL_MARGIN * level_floor * rms_r
+            echo = (level_floor is not None and rho >= RHO_HOLD and now >= self._caller_until
+                    and rms_x <= LEVEL_MARGIN * level_floor * rms_r)
             if echo:
                 self._gated_level += 1
         if echo:

@@ -90,8 +90,12 @@ PROTECTED_WORDS = frozenset((os.environ.get("KYUTAI_PROTECTED_WORDS") or
 _WORD_CHARS = re.compile(r"[^a-z0-9']+")
 
 
+_ABBREV_DOTS = re.compile(r"\b([a-z])\.(?=[a-z]\b|[a-z]\.)")
+
+
 def _norm_words(text: str) -> list[str]:
-    return [w for w in _WORD_CHARS.sub(" ", text.lower()).split() if w]
+    """Lowercase words without punctuation; dotted abbreviations collapse ("p.m." → "pm")."""
+    return [w for w in _WORD_CHARS.sub(" ", _ABBREV_DOTS.sub(r"\1", text.lower()).replace(".", " ")).split() if w]
 
 
 class SpokenLog:
@@ -789,7 +793,10 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
         if self._overlap() < SELF_ECHO_MIN_OVERLAP:
             return "caller"
         recent = spoken.recent(SELF_ECHO_WINDOW_S)
-        hits = sum(1 for w in words if w in recent)
+        # The two passes never agree on how a number is written ("2:33 pm" comes back as "3 p.m."),
+        # so any number counts as a hit when she said a number.
+        digits = any(any(c.isdigit() for c in w) for w in recent)
+        hits = sum(1 for w in words if w in recent or (digits and any(c.isdigit() for c in w)))
         return "echo" if hits >= SELF_ECHO_SHARE * len(words) else "caller"
 
     def _emit_gated(self, kind: stt.SpeechEventType, text: str = "") -> None:
