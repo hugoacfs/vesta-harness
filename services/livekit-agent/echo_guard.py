@@ -60,7 +60,23 @@ DOUBLE_TALK_RATIO = float(os.environ.get("ECHO_DOUBLE_TALK_RATIO", "1.5"))
 LEVEL_MARGIN = float(os.environ.get("ECHO_LEVEL_MARGIN", "1.5"))
 # A confident correlation for the lag vote (three agreeing votes lock the lag); the guard is
 # inert until then, so a caller on earphones is never touched.
-RHO_LOCK = float(os.environ.get("ECHO_RHO_LOCK", "0.6"))
+# The lock (2026-09-23): a real echo path correlates at 0.9 and more; the best of 24 000 lags
+# between two unrelated voices reaches 0.6 now and then, and three windows at one lag did lock
+# on a caller talking over her. Four windows at 0.75, both signals clearly above the floor.
+RHO_LOCK = float(os.environ.get("ECHO_RHO_LOCK", "0.75"))
+LOCK_VOTES = int(os.environ.get("ECHO_LOCK_VOTES", "4"))
+VOTE_FLOOR_MIC = float(os.environ.get("ECHO_VOTE_FLOOR_MIC", "0.004"))
+VOTE_FLOOR_REF = float(os.environ.get("ECHO_VOTE_FLOOR_REF", "0.02"))
+# Adaptive interruption (2026-09-23): the word gate on interruptions (MIN_INTERRUPTION_WORDS)
+# exists for the speakerphone, where audio activity alone would be her own echo. A caller on
+# earphones, or behind a browser canceller that leaves nothing to lock onto, never trips it, and
+# for them the gate only costs the short interjection ("stop", "hang on") that carries no
+# recognized word — Hugo's sub-second bursts on 2026-09-20 did nothing. Once this much of her
+# playback has passed without a lag lock, interruption runs on audio alone; a lock at any later
+# point restores the word gate for the next ADAPTIVE_LOCK_MEMORY_S of playback.
+ADAPTIVE = os.environ.get("ECHO_ADAPTIVE_INTERRUPTION", "1").strip().lower() not in ("0", "false", "no", "")
+ADAPTIVE_AFTER_S = float(os.environ.get("ECHO_ADAPTIVE_AFTER_S", "3.0"))
+ADAPTIVE_LOCK_MEMORY_S = float(os.environ.get("ECHO_ADAPTIVE_LOCK_MEMORY_S", "120"))
 LEVEL_WINDOWS = int(os.environ.get("ECHO_LEVEL_WINDOWS", "40"))   # ~2 s of 50 ms frames
 FLOOR = float(os.environ.get("ECHO_FLOOR", "0.002"))               # mic rms below this is silence
 LOCK_TOLERANCE_S = 0.03
@@ -185,9 +201,14 @@ class ReferenceTap(AudioOutput):
 class EchoGate(AudioInput):
     """Replaces microphone frames that are mostly Vesta's own voice with silence."""
 
-    def __init__(self, *, source: AudioInput, reference: EchoReference) -> None:
+    def __init__(self, *, source: AudioInput, reference: EchoReference, session=None, words: int = 1) -> None:
         super().__init__(label="EchoGate", source=source)
         self._reference = reference
+        self._session = session                 # for the adaptive interruption gate
+        self._words_cfg = words                 # MIN_INTERRUPTION_WORDS as configured
+        self._playback_s = 0.0                  # her playback seen by the gate, this call
+        self._last_lock_at: float | None = None
+        self._audio_only = False                # interruption currently on audio alone
         self._window = int(WINDOW_S * RATE)
         self._max_lag = int(MAX_LAG_S * RATE)
         self._narrow = int(NARROW_S * RATE)
@@ -231,6 +252,10 @@ class EchoGate(AudioInput):
             self._frames = self._gated = self._over = self._gated_corr = self._gated_level = 0
             self._rho_max = 0.0
         self._frames += 1
+        self._playback_s += len(pcm) / RATE
+        if self._lock is not None:
+            self._last_lock_at = now
+        self._adapt(now)
         x = self._mic
         rms_x = _rms(x)
         if rms_x < FLOOR:
@@ -245,8 +270,14 @@ class EchoGate(AudioInput):
         gain = float(np.dot(x, r) / max(1e-9, np.dot(r, r)))   # least-squares echo gain at the best lag
         if rho > self._rho_max:
             self._rho_max, self._lag_at_max = rho, lag
-        if rho >= RHO_LOCK:
+        if rho >= RHO_LOCK and rms_x >= VOTE_FLOOR_MIC and rms_r >= VOTE_FLOOR_REF:
             self._vote(lag, now)
+        if self._lock is None:
+            # No echo path known: nothing is gated or cleaned. Until 2026-09-23 a correlation
+            # over RHO_ON alone gated the frame, and a caller talking over her with no echo at
+            # all lost words to spurious matches (s2n: "Tell me a short joke" came through as
+            # "A short joke"). The lock arrives within the first second of a real echo.
+            return frame
         if rho >= RHO_ON:
             self._hold_until = now + HOLD_S
             self._gain_db = 20.0 * np.log10(max(1e-6, abs(gain)))
@@ -347,11 +378,39 @@ class EchoGate(AudioInput):
     def _vote(self, lag: int, now: float) -> None:
         if self._lock is not None:
             return
+        if lag >= self._max_lag - self._window // 4 or lag <= self._window // 4:
+            # The best lag sits at an edge of the search window: that is where unrelated speech
+            # (the caller talking over her) pins, three windows running, and a phantom lock at
+            # the edge undid the audio-only interruption the moment the caller spoke (2026-09-23).
+            return
         self._lag_votes.append(lag)
-        self._lag_votes = self._lag_votes[-3:]
-        if len(self._lag_votes) == 3 and max(self._lag_votes) - min(self._lag_votes) <= LOCK_TOLERANCE_S * RATE:
+        self._lag_votes = self._lag_votes[-LOCK_VOTES:]
+        if len(self._lag_votes) == LOCK_VOTES and max(self._lag_votes) - min(self._lag_votes) <= LOCK_TOLERANCE_S * RATE:
             self._lock = int(np.median(self._lag_votes))
             log.info("echo guard: lag locked at %d ms", int(self._lock * 1000 / RATE))
+            self._last_lock_at = now
+            self._adapt(now)
+
+    def _adapt(self, now: float) -> None:
+        """Interruption on audio alone while no echo path has been locked; the word gate as
+        configured whenever one has (see ADAPTIVE above). Flips LiveKit's live option."""
+        if not ADAPTIVE or self._session is None or self._words_cfg <= 0:
+            return
+        locked_recently = self._last_lock_at is not None and now - self._last_lock_at < ADAPTIVE_LOCK_MEMORY_S
+        audio_only = not locked_recently and self._playback_s >= ADAPTIVE_AFTER_S
+        if audio_only == self._audio_only:
+            return
+        try:
+            self._session.options.turn_handling["interruption"]["min_words"] = 0 if audio_only else self._words_cfg
+        except Exception as e:  # noqa: BLE001 — the option layout changed: keep the configured gate
+            log.warning("echo guard: could not set the interruption word gate (%s)", e)
+            self._session = None
+            return
+        self._audio_only = audio_only
+        if audio_only:
+            log.info("echo guard: interruption on audio alone (no echo path after %.1fs of playback)", self._playback_s)
+        else:
+            log.info("echo guard: interruption needs %d word(s) again (echo path locked)", self._words_cfg)
 
     def _finish_stretch(self, now: float) -> None:
         if self._stretch_started is None:
@@ -366,8 +425,9 @@ class EchoGate(AudioInput):
         self._ratios = []
 
 
-def install(session, reference: EchoReference | None = None) -> EchoReference | None:
-    """Wrap the session's audio input and output; call after session.start()."""
+def install(session, reference: EchoReference | None = None, words: int = 1) -> EchoReference | None:
+    """Wrap the session's audio input and output; call after session.start(). `words` is the
+    configured interruption word gate the adaptive rule falls back to."""
     if not ENABLED:
         log.info("echo guard disabled (ECHO_GUARD=0)")
         return None
@@ -378,7 +438,8 @@ def install(session, reference: EchoReference | None = None) -> EchoReference | 
         log.warning("echo guard not installed: audio %s missing", "output" if sink is None else "input")
         return None
     session.output.audio = ReferenceTap(next_in_chain=sink, reference=reference)
-    session.input.audio = EchoGate(source=source, reference=reference)
-    log.info("echo guard installed (window %d ms, lag up to %d ms, rho %.2f/%.2f, level margin x%.1f)",
-             int(WINDOW_S * 1000), int(MAX_LAG_S * 1000), RHO_ON, RHO_HOLD, LEVEL_MARGIN)
+    session.input.audio = EchoGate(source=source, reference=reference, session=session, words=words)
+    log.info("echo guard installed (window %d ms, lag up to %d ms, rho %.2f/%.2f, level margin x%.1f, adaptive interruption %s)",
+             int(WINDOW_S * 1000), int(MAX_LAG_S * 1000), RHO_ON, RHO_HOLD, LEVEL_MARGIN,
+             f"after {ADAPTIVE_AFTER_S:.0f}s without a lock" if ADAPTIVE and words > 0 else "off")
     return reference

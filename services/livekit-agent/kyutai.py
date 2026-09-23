@@ -78,7 +78,7 @@ SELF_ECHO_QUORUM = int(os.environ.get("KYUTAI_SELF_ECHO_QUORUM", "3"))
 SELF_ECHO_SHARE = float(os.environ.get("KYUTAI_SELF_ECHO_SHARE", "0.75"))
 # Measured from when a word went to the synthesizer; a long reply plays out up to tens of seconds
 # after its words were generated, so the window is long and the overlap rule below does the work.
-SELF_ECHO_WINDOW_S = float(os.environ.get("KYUTAI_SELF_ECHO_WINDOW_S", "45.0"))
+SELF_ECHO_WINDOW_S = float(os.environ.get("KYUTAI_SELF_ECHO_WINDOW_S", "120.0"))
 SELF_ECHO_SHORT_WINDOW_S = float(os.environ.get("KYUTAI_SELF_ECHO_SHORT_WINDOW_S", "4.0"))
 # An utterance is only ever judged echo when at least this share of its audio overlapped Vesta's
 # playback (plus the echo lag): a caller answering after she finished, with her own words
@@ -497,6 +497,7 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
         speak_task: asyncio.Task[None] | None = None
         source = self._input_ch.__aiter__()
         next_item: asyncio.Future = asyncio.ensure_future(source.__anext__())
+        filler_get: asyncio.Future | None = None
         self._kyutai._active = self
         try:
             while True:
@@ -558,6 +559,8 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
             self._closed = True
             if self._kyutai._active is self:
                 self._kyutai._active = None
+            if filler_get is not None and not filler_get.done():
+                filler_get.cancel()   # else "Task was destroyed but it is pending" at every stream end
             if not next_item.done():
                 next_item.cancel()
             if speak_task is not None and not speak_task.done():
@@ -775,8 +778,9 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                 return None
             if all(w in PROTECTED_WORDS for w in words):
                 return "caller"
-            if not spoken.spoke_within(SELF_ECHO_SHORT_WINDOW_S, before=self._utterance_start):
-                return "caller"
+            # No send-time window here (there was one, 4 s before the utterance, until 2026-09-23):
+            # the synthesizer runs tens of seconds ahead of playback, so the last word of a long
+            # reply goes out long before its echo comes back — the overlap rule below is the test.
         elif not spoken.spoke_within(SELF_ECHO_WINDOW_S):
             return "caller"
         if self._overlap() < SELF_ECHO_MIN_OVERLAP:
@@ -967,12 +971,14 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
 
             async def send() -> None:
                 nonlocal pending
+                last_sent = time.monotonic()
                 while True:
                     try:
                         item = await asyncio.wait_for(frames.__anext__(), timeout=STT_KEEPALIVE_S)
                     except asyncio.TimeoutError:
                         # Nothing from the room (muted, or the caller is away): keep the slot alive.
                         await ws.send(msgpack.packb({"type": "Audio", "pcm": _SILENCE_CHUNK}, use_single_float=True))
+                        last_sent = time.monotonic()
                         continue
                     except StopAsyncIteration:
                         break
@@ -1011,6 +1017,12 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                             self._held_total += 1
                             while self._held and self._held_samples - len(self._held[0]) >= LEAD_IN_SAMPLES:
                                 self._held_samples -= len(self._held.pop(0))
+                            if now_f - last_sent >= STT_KEEPALIVE_S:
+                                # A long reply with a quiet caller starved the socket: moshi-server
+                                # closes a stream 120 s after its last audio (2026-09-20). One frame
+                                # of silence per keepalive interval keeps it open at no cost.
+                                await ws.send(msgpack.packb({"type": "Audio", "pcm": _SILENCE_CHUNK}, use_single_float=True))
+                                last_sent = now_f
                             continue
                         if self._held:
                             pending = np.concatenate([pending, *self._held])
@@ -1020,6 +1032,7 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                     while len(pending) >= STT_CHUNK:
                         chunk, pending = pending[:STT_CHUNK], pending[STT_CHUNK:]
                         await ws.send(msgpack.packb({"type": "Audio", "pcm": chunk.tolist()}, use_single_float=True))
+                        last_sent = time.monotonic()
                 # input ended: flush the remainder and finalize
                 if len(pending):
                     await ws.send(msgpack.packb({"type": "Audio", "pcm": pending.tolist()}, use_single_float=True))

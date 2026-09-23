@@ -990,7 +990,7 @@ async def entrypoint(ctx: JobContext) -> None:
         room_options=RoomOptions(close_on_disconnect=False),
     )
     try:
-        echo_guard.install(session)
+        echo_guard.install(session, words=MIN_INTERRUPTION_WORDS)
     except Exception as e:  # noqa: BLE001 — the call runs without the guard rather than not at all
         log.warning("echo guard not installed: %s", e)
     _follow_callers(ctx, session)
