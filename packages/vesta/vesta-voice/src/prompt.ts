@@ -27,6 +27,19 @@ export const VOICE_TURN_NOTE = [
 ].join(' ')
 
 /**
+ * The reminder for a step after tool results while a call is bound. Search
+ * results and fetched pages pull the model back into its text style — on
+ * 2026-09-20 every answer after a search ran to 340–390 words of headings and
+ * numbered lists, read aloud — so the spoken register is restated right where
+ * the answer is about to be written.
+ */
+export const VOICE_STEP_NOTE = [
+  'Spoken turn, continued: the caller is still on the voice call and will hear what you write next read aloud.',
+  'Give the outcome in a few short spoken sentences — the gist, not a list; no markdown, headings, bullets, numbering, or URLs.',
+  'When there is more detail than a few sentences carry, say so in a sentence and put the detail in a fenced code block for the screen.',
+].join(' ')
+
+/**
  * The full spoken-mode guidance, kept for deployments that prefer a prompt
  * section over the per-turn note (a section changes the request prefix while
  * a call is bound, which costs a full prompt prefill at call start).

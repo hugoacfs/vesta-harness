@@ -187,6 +187,11 @@ export class VoiceBridge {
     return true
   }
 
+  /** Whether a room is bound to the Session, i.e. a call is in progress. */
+  isBound(sessionId: string): boolean {
+    return [...this.bindings].some(candidate => String(candidate.sessionId) === sessionId)
+  }
+
   private bind(socket: WebSocket, sessionId: SessionId, agent: Agent): void {
     const send = (frame: HostToAgent): void => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(frame))

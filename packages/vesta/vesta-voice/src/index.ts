@@ -8,12 +8,15 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { VoiceBridge } from './bridge.ts'
+import { VOICE_SOURCE_PLUGIN, VOICE_STEP_NOTE } from './prompt.ts'
 import { registerVoiceRoutes } from './routes.ts'
 
 export { CONFIG_PATH, EMOTION_PATH, TOKEN_PATH } from './routes.ts'
-export { VOICE_SECTION, VOICE_SOURCE_PLUGIN, VOICE_TURN_NOTE } from './prompt.ts'
+export { VOICE_SECTION, VOICE_SOURCE_PLUGIN, VOICE_STEP_NOTE, VOICE_TURN_NOTE } from './prompt.ts'
 export type { AgentToHost, HostToAgent } from './types.ts'
 
 export const name = 'vesta-voice'
@@ -83,4 +86,19 @@ export function apply(ctx: Context, config: Config): void {
   }), 'vesta-voice: bridge upgrade route')
   ctx.effect(() => () => { bridge.dispose() }, 'vesta-voice: bound rooms')
   registerVoiceRoutes(ctx, config, bridge)
+  // A step after tool results while a call is bound: restate the spoken register right
+  // before the answer is written. The per-turn note sits at the turn's first step, behind
+  // the results by the time the answer comes.
+  ctx.on('agent/pre-step', async ({ agent, step }, next) => {
+    const decision = await next()
+    if (decision.kind !== 'enter' || step <= 1 || !bridge.isBound(String(agent.session.id))) return decision
+    if (decision.messages.some(message => message.source.kind === 'plugin' && message.source.plugin === VOICE_SOURCE_PLUGIN)) return decision
+    return {
+      ...decision,
+      messages: [...decision.messages, createUserMessage({
+        content: [{ type: 'text', text: VOICE_STEP_NOTE }],
+        source: { kind: 'plugin', plugin: VOICE_SOURCE_PLUGIN },
+      })],
+    }
+  })
 }
