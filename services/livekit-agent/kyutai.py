@@ -54,7 +54,9 @@ PAUSE_THRESHOLD = float(os.environ.get("KYUTAI_PAUSE_THRESHOLD", "0.5"))
 PAUSE_GRACE_S = float(os.environ.get("KYUTAI_PAUSE_GRACE_S", "0.9"))
 # A pause prediction ends the turn only once the local VAD no longer hears the caller: a drawn-out
 # word ("thaaan… two hundred") makes the head fire while the caller is still audibly speaking.
-# Past this long after the prediction the turn ends anyway (a VAD held open by steady noise).
+# Past this long after the prediction or the latest word, whichever is later, the turn ends anyway
+# (a VAD held open by steady noise). A word arriving after the grace disarms the prediction: the
+# caller carried on (2026-09-20: the first prediction in a long sentence cut it four seconds later).
 PAUSE_VAD_CAP_S = float(os.environ.get("KYUTAI_PAUSE_VAD_CAP_S", "4.0"))
 # Fallback: finalize this long after the last word if the pause head never fires — but only once
 # the local VAD no longer hears the caller: a filled pause, a drawn-out word or a moment of
@@ -136,11 +138,11 @@ def _headers(api_key: str) -> dict[str, str]:
 TTS_PREROLL_S = float(os.environ.get("TTS_PREROLL_S", "0.35"))
 TTS_LEAD_LOW_S = float(os.environ.get("TTS_LEAD_LOW_S", "0.15"))
 TTS_LEAD_HIGH_S = float(os.environ.get("TTS_LEAD_HIGH_S", "0.5"))
-# Text flow control (2026-09-20): the server renders 2–3× faster than real time and the streaming
-# recognizer shares its GPU, so during a long reply the caller's words stalled until generation
-# finished — a barge-in was heard ten seconds late. Words are held back while the generated
-# audio leads playback by more than this; the model's text waits in the queue meanwhile.
-TTS_MAX_LEAD_S = float(os.environ.get("TTS_MAX_LEAD_S", "3.0"))
+# No text flow control: words go to the server as the model produces them. A throttle on the
+# generated lead (added and removed on 2026-09-20) waited forever after a filler clip mid-reply —
+# the clip re-arms the pre-roll, and the lead then read as everything generated so far — so the
+# words after a tool call were never rendered; its reason, the recognizer stalling behind a reply
+# in the same server process, went with the split of the two onto separate processes.
 # wsola: pitch-preserving time stretch (audiotsm); resample: the old linear resample (pitch follows speed).
 TTS_STRETCH = os.environ.get("TTS_STRETCH", "wsola").strip().lower()
 STARVE_LEAD_S = 0.02    # the playout buffer is considered empty below this lead
@@ -228,14 +230,6 @@ class _Pacer:
     def lead(self, now: float) -> float:
         """Playback seconds pushed but not yet played, by the wall clock since the first push."""
         return self._pushed / SAMPLE_RATE - (now - self._t_start)
-
-    def generation_lead(self, now: float) -> float:
-        """Server-audio seconds generated beyond what playback has consumed (server seconds:
-        playback at speed s consumes s of them per wall second)."""
-        generated = self.samples_in / SAMPLE_RATE
-        if not self._released:
-            return generated
-        return generated - (now - self._t_start) * self._stretch.speed
 
     def feed(self, pcm: np.ndarray) -> None:
         self.samples_in += len(pcm)
@@ -393,14 +387,12 @@ class KyutaiTTS(tts.TTS):
         await self._speak(words, chunks.append)
         return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
 
-    async def _speak(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float = 30.0, throttle=None) -> None:
-        """Drive one utterance: words in (None ends it), float32 pcm chunks out via on_pcm.
-        throttle: a callable giving the generation lead in seconds; words wait while it exceeds
-        TTS_MAX_LEAD_S."""
+    async def _speak(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float = 30.0) -> None:
+        """Drive one utterance: words in (None ends it), float32 pcm chunks out via on_pcm."""
         async with self._channel_gate():
-            await self._speak_gated(words, on_pcm, ready_deadline, throttle)
+            await self._speak_gated(words, on_pcm, ready_deadline)
 
-    async def _speak_gated(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float, throttle=None) -> None:
+    async def _speak_gated(self, words: "asyncio.Queue[str | None]", on_pcm, ready_deadline: float) -> None:
         try:
             ws = await websockets.connect(self._ws_url(), additional_headers=_headers(self._api_key), max_size=None, open_timeout=ready_deadline)
         except Exception as e:  # noqa: BLE001
@@ -412,9 +404,6 @@ class KyutaiTTS(tts.TTS):
                     if word is None:
                         await ws.send(msgpack.packb({"type": "Eos"}))
                         return
-                    if throttle is not None:
-                        while throttle() > TTS_MAX_LEAD_S:
-                            await asyncio.sleep(0.1)
                     self.spoken.add(word)
                     await ws.send(msgpack.packb({"type": "Text", "text": word}))
 
@@ -536,7 +525,7 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
                         if not segment_open:
                             segment_open = True
                             output_emitter.start_segment(segment_id=utils.shortuuid())
-                        speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm, throttle=lambda: pacer.generation_lead(time.monotonic())))
+                        speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm))
                     if speaking:
                         for w in tail:
                             words.put_nowait(w)
@@ -552,7 +541,7 @@ class KyutaiSynthesizeStream(tts.SynthesizeStream):
                         if not segment_open:
                             segment_open = True
                             output_emitter.start_segment(segment_id=utils.shortuuid())
-                        speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm, throttle=lambda: pacer.generation_lead(time.monotonic())))
+                        speak_task = asyncio.create_task(self._kyutai._speak(words, on_pcm))
                     if last_word_at and now - last_word_at > TEXT_GAP_S:
                         text_gaps += 1   # the model paused mid-reply; the pre-roll is what covers this
                     last_word_at = now
@@ -1052,8 +1041,24 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                             self._lead = []
                             self._lead_samples = 0
                             self._emit_gated(stt.SpeechEventType.START_OF_SPEECH)
+                        now_w = time.monotonic()
+                        if self._pause_at is not None and now_w - self._pause_at >= PAUSE_GRACE_S:
+                            # A word this long after the predicted pause is the caller carrying on
+                            # (a hesitation mid-sentence, not the end): disarm. The next prediction
+                            # re-arms, and the pass started at the stale one is dropped. Before
+                            # 2026-09-20 the first prediction stayed armed for the rest of the
+                            # sentence: the VAD cap then cut long sentences in two, and every later
+                            # word re-ran the second pass over the whole utterance.
+                            self._pause_at = None
+                            if self._spec_timer is not None:
+                                self._spec_timer.cancel()
+                                self._spec_timer = None
+                            if self._spec is not None:
+                                self._spec.cancel()
+                                self._spec = None
+                            self._spec_words = 0
                         self._words.append(word)
-                        self._last_word_at = time.monotonic()
+                        self._last_word_at = now_w
                         self._emit_gated(stt.SpeechEventType.INTERIM_TRANSCRIPT, " ".join(self._words))
                         if self._pause_at is not None and self._kyutai._refine_url:
                             # Words after the pause (the model's emission lag) make the pass
@@ -1084,10 +1089,11 @@ class KyutaiRecognizeStream(stt.RecognizeStream):
                     since_word = now - self._last_word_at
                     if self._pause_at is not None and now - max(self._pause_at, self._last_word_at) >= PAUSE_GRACE_S:
                         # The model predicts a pause. The caller must have gone quiet as well, or the
-                        # cap must have passed; otherwise a drawn-out word cuts the sentence in two.
+                        # cap must have passed with no new word; otherwise a drawn-out word cuts the
+                        # sentence in two.
                         if quiet:
                             self._finalize("pause")
-                        elif now - self._pause_at >= PAUSE_VAD_CAP_S:
+                        elif now - max(self._pause_at, self._last_word_at) >= PAUSE_VAD_CAP_S:
                             self._finalize("pause-cap")
                     elif since_word > FINAL_AFTER_SILENCE_S:
                         # No pause prediction and no new word (a filled pause, thinking mid-sentence):
