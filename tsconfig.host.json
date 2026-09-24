@@ -344,7 +344,6 @@
     { "path": "./packages/bundle/sdk-minimal" },
     { "path": "./packages/bundle/web-app" },
     { "path": "./packages/bundle/vesta-app" },
-    { "path": "./packages/vesta/vesta-voice" },
     { "path": "./packages/vesta/vesta-notify" },
     { "path": "./packages/vesta/vesta-sessions" },
     { "path": "./packages/vesta/vesta-modes" },

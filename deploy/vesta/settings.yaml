@@ -12,9 +12,8 @@ llm-pi-ai:
       api: openai-completions
       baseURL: http://192.168.0.2:4000/litellm/v1
       apiKeyEnv: VESTA_API_KEY
-      # Provider default: Qwen keeps thinking in typed sessions. A voice call
-      # switches its Session to off for the call's duration (vesta-voice),
-      # which the qwen-chat-template format turns into
+      # Provider default: Qwen keeps thinking unless a mode switches its Session
+      # to off (vesta-modes), which the qwen-chat-template format turns into
       # chat_template_kwargs.enable_thinking=false on the request.
       reasoning: xhigh
       # Cap the thinking phase so an answer always fits in maxTokens: pi-ai

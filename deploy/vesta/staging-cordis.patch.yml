@@ -1,17 +1,7 @@
 # ~/.vesta-harness-staging/profiles/vesta/cordis.patch.yml — the staging Harness's home
-# patch. A patch replaces the whole matched config, so the bundle's voice fields are restated
-# here with the staging room prefix; the staging worker (livekit-agent-staging in
-# deploy/vesta/livekit-voice.docker-compose.yml) accepts only `dshs-` rooms and production's
-# only `dsh-` rooms, which is what keeps the two apart on the shared SFU.
-- id: vesta-voice
-  config:
-    livekitUrl: wss://vesta.tail22b555.ts.net:8481
-    mediaUrl: http://127.0.0.1:8011
-    roomPrefix: dshs-
-    # Named worker: livekit-server 1.13 ignores the token claim, so the token route also
-    # requests an explicit dispatch through the SFU's API (2026-09-11, plan P3).
-    agentName: vesta-staging
-    livekitApiUrl: http://192.168.0.2:7880
+# profile patch. A patch replaces the whole matched config, so every restated row carries
+# its full config. (The voice row that lived here until 2026-09-24 went with the voice
+# modality; see the runbook, "Voice: retired".)
 
 # Staging-only (2026-09-11, feature plan P2): short notifier thresholds so the Telegram
 # pings can be exercised in minutes. A patch replaces the whole config, so linkBase is

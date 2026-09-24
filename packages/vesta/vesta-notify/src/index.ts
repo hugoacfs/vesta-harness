@@ -237,8 +237,8 @@ export function apply(ctx: Context, config: Config): void {
   }), 'vesta-notify: assistant text')
 
   // Passive observers at the front of both waterfalls: record, wait for the
-  // real answerer, then forget. A voice bridge registered later sits ahead of
-  // these and may settle a request without reaching them (the caller is present).
+  // real answerer, then forget. An answerer registered later sits ahead of these
+  // and may settle a request without reaching them.
   ctx.effect(() => ctx.on('approval/request', async (request, next) => {
     const agent = request.agent
     const id = String(agent.session.id)

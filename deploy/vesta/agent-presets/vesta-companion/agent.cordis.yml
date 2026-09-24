@@ -1,7 +1,7 @@
 # User preset `vesta-companion` — the Companion mode (roadmap stream M, 2026-09-11):
-# conversation, typed or by voice. Composition = `vesta-voice` (the lean spoken set:
-# shell, files, search, background jobs, web search; memory and the other MCP servers
-# come from the bundle) with the Companion persona. Reasoning is switched off at
+# conversation. Composition = the lean set once used for spoken sessions (shell, files,
+# search, background jobs, web search; memory and the other MCP servers come from the
+# bundle) with the Companion persona. Reasoning is switched off at
 # session start by the `vesta-modes` host plugin so replies come fast.
 #
 # AGENT-PLANE composition: a service row MUST sit inside a group with an `isolate`

@@ -77,7 +77,6 @@
     { "path": "./packages/client/ui-brand-official" },
     { "path": "./packages/client/ui-vesta-theme" },
     { "path": "./packages/client/ui-vesta-brand" },
-    { "path": "./packages/client/ui-vesta-voice" },
     { "path": "./packages/client/ui-vesta-presence" },
     { "path": "./packages/client/ui-vesta-sessions" },
     { "path": "./packages/client/ui-vesta-routines" },

@@ -501,7 +501,6 @@
       "@deepseek-ai/dsh-vesta-routines": ["./packages/vesta/vesta-routines/src"],
       "@deepseek-ai/dsh-vesta-sessions": ["./packages/vesta/vesta-sessions/src"],
       "@deepseek-ai/dsh-vesta-tool-restrict": ["./packages/vesta/vesta-tool-restrict/src"],
-      "@deepseek-ai/dsh-vesta-voice": ["./packages/vesta/vesta-voice/src"],
       "@deepseek-ai/dsh-web": ["./packages/web/web/src"],
       "@deepseek-ai/dsh-web-app": ["./packages/bundle/web-app/src"],
       "@deepseek-ai/dsh-web-fetch-http": ["./packages/web/web-fetch-http/src"],

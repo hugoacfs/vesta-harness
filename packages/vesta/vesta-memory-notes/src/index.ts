@@ -538,7 +538,7 @@ export function apply(ctx: Context, config: Config): void {
   }), 'vesta-memory-notes: archive')
 
   // Recall: the hook the router calls. The notes enter as an injected message on the step the
-  // prompt wakes (like the voice plugin's spoken-turn note), each note once per session unless
+  // prompt wakes (charter D19), each note once per session unless
   // the store's `updated` stamp moved, so the request prefix stays cache-stable.
   const recall = async (sessionId: string, text: string): Promise<void> => {
     const session = ctx.sessions.get(sessionId as SessionId)
