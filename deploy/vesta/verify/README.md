@@ -10,6 +10,7 @@ Run from any machine with `ssh vesta` (they mint a cookie jar through `~/.local/
 
 - `homes-drift.sh` (2026-09-25, runs ON vesta) — where each live home differs from its versioned templates (settings, home and profile patches, hooks, presets); the staging `ceres` alias is the one intended divergence.
 - `s-verify.sh` (2026-09-25, from the Mac) — Pipeline S: a staging session's tool catalogue (no Telegram, no Home Assistant, the memory tools), a `memory_search` answered by the staging memory server on 7339, the session deleted.
+- `ffdrive/voice-connect-check.mjs` (2026-09-25, `BROWSER=chrome`) — the vesta-voice page in Chrome with a fake microphone: a real call through the path connects, a call after a page refresh mid-call connects, a call whose offer is forced to fail returns the page to idle with a note. Headless Firefox on the Mac cannot complete ICE against the box, so use Chrome.
 - `ffdrive/voice-path-check.mjs` (2026-09-25) — the vesta-voice page under its reverse-proxy path (`/voice-staging/`, or `/voice/` with `VESTA_TARGET=prod`): relative assets and fonts load, the offer URL resolves under the path, the home link and wordmark are right, no console errors.
 - `ffdrive/staging-check.mjs` (2026-09-25) — the staging harness's tab title and wordmark, and the staging voice page's, with screenshots; `VESTA_TARGET=prod` checks the production pair instead (they must say `harness` and `voice`).
 
