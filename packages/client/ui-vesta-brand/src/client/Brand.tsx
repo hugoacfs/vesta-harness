@@ -12,6 +12,13 @@ export function VestaBrandMark({ size }: SidebarBrandMarkOwnerProps) {
   return <VestaMark size={size} className={css.orb} />
 }
 
+/**
+ * The instance this bundle was built for, inlined by vesta-build (`DSH_CLIENT_VESTA_ENV`,
+ * 2026-09-25): the staging wordmark reads "vesta staging" so the two harnesses are told
+ * apart at a glance; anything else reads "vesta harness".
+ */
+const INSTANCE = process.env.DSH_CLIENT_VESTA_ENV
+
 /** Name occupant props: the locale seat only (the owner passes no data). */
 export type VestaBrandNameProps = PropsLocale<'brand.vesta'>
 
@@ -24,7 +31,7 @@ export function VestaBrandName({ t }: VestaBrandNameProps) {
   return (
     <span className={css.name}>
       <span className={css.word}>{t('brand.name')}</span>
-      <span className={css.suffix}>{t('brand.suffix')}</span>
+      <span className={css.suffix}>{t(INSTANCE === 'staging' ? 'brand.suffix.staging' : 'brand.suffix')}</span>
       <span className={css.caret} aria-hidden="true">_</span>
     </span>
   )

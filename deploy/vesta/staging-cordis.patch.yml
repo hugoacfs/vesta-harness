@@ -3,16 +3,19 @@
 # its full config. (The voice row that lived here until 2026-09-24 went with the voice
 # modality; see the runbook, "Voice: retired".)
 
-# Staging-only (2026-09-11, feature plan P2): short notifier thresholds so the Telegram
-# pings can be exercised in minutes. A patch replaces the whole config, so linkBase is
-# restated. Production keeps the plugin defaults (120 s / 60 s / 90 s).
+# Telegram is off on staging (Hugo, 2026-09-25, Pipeline S): the notifier row is disabled here
+# and the staging home patch (staging-home-cordis.patch.yml) mounts no Telegram tool. A staging
+# bot of its own may come later; until then, to exercise the pings from staging, set `disabled`
+# to false, restore the short thresholds below (2026-09-11: minutes instead of the plugin's
+# 120 s / 60 s / 90 s; a patch replaces the whole config, so linkBase is restated) and restart.
 - id: vesta-notify
-  config:
-    linkBase: https://vesta.tail22b555.ts.net/harness-staging/
-    minTurnSeconds: 20
-    approvalWaitSeconds: 10
-    awayAfterSeconds: 30
-    cooldownSeconds: 30
+  disabled: true
+  # config:
+  #   linkBase: https://vesta.tail22b555.ts.net/harness-staging/
+  #   minTurnSeconds: 20
+  #   approvalWaitSeconds: 10
+  #   awayAfterSeconds: 30
+  #   cooldownSeconds: 30
 
 # Phase 4: deleted sessions from staging are exported apart from production ones.
 - id: vesta-sessions

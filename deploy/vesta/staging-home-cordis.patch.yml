@@ -1,0 +1,96 @@
+# ~/.vesta-harness-staging/cordis.patch.yml — the STAGING Harness's user patch layer (machine-wide
+# for that home). Sibling of home-cordis.patch.yml (production). The differences are Pipeline S
+# (2026-09-25, Hugo's decisions): no Telegram, its own memory server, Home Assistant present but
+# disabled, staging paths. Keep the two files in step otherwise; deploy/vesta/verify/homes-drift.sh
+# reports where a live home differs from its template.
+
+# Telegram: OFF on staging (Hugo, 2026-09-25). The send-only notifier MCP (ai-telegram-mcp,
+# loopback 7335, mcp__telegram-notify__notify) is not mounted here, and the notifier plugin row
+# is disabled in the staging profile patch. A staging bot of its own may come later; then restore
+# the insert below pointed at that bot's server. Production mounts it (home-cordis.patch.yml).
+# - insert:
+#     - id: notify-telegram
+#       name: '@deepseek-ai/dsh-mcp-client'
+#       config:
+#         serverName: telegram-notify
+#         transport: streamable-http
+#         url: http://127.0.0.1:7335/mcp
+#         headers: {}
+
+# Memory: staging's OWN server (Pipeline S, 2026-09-25): ai-memory-mcp-staging on loopback 7339,
+# store /srv/ai/memory-staging (seeded from a copy of production on 2026-09-25 and drifting since),
+# index /srv/ai/memory-index-staging; compose /srv/ai/compose/memory-mcp, service memory-mcp-staging.
+# The bundle mounts production's server (7332); both rows are restated here in full because a
+# patch replaces the whole config of the row it names.
+- id: mcp-vesta-memory
+  config:
+    serverName: memory
+    transport: streamable-http
+    url: http://127.0.0.1:7339/mcp
+
+- id: vesta-memory-notes
+  config:
+    url: http://127.0.0.1:7339/mcp
+    excludePresets: [vesta-incognito, vesta-routine, vesta-batch]
+    idleSeconds: 30
+    everyTurns: 4
+    maxPerPass: 3
+    maxPerSession: 6
+    dailyCap: 20
+    minConfidence: 0.7
+
+# Web search is NOT mounted here: the dsh-vesta-app bundle already mounts the same
+# server (127.0.0.1:7331) as `search` -> mcp__search__*. Shared with production.
+
+# Vision MCP: CPU-only image reading (ai-vision-mcp + ai-vision-ollama on loopback 7338;
+# compose /srv/ai/compose/vision-mcp), exposed as mcp__vision__read_image(path, question?).
+# Shared with production; images must lie under the roots the container mounts read-only.
+- insert:
+    - id: mcp-vision
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: vision
+        transport: streamable-http
+        url: http://127.0.0.1:7338/mcp
+        headers: {}
+
+# PDF MCP (roadmap T5): the standalone pdf-manipulation server (ai-pdf-mcp, loopback 7333,
+# /srv/ai/pdf-mcp/work is its only visible path) → mcp__pdf__*. Shared with production.
+- insert:
+    - id: mcp-pdf
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pdf
+        transport: streamable-http
+        url: http://127.0.0.1:7333/mcp
+        headers: {}
+
+# Shell guard (roadmap T4): Claude Code style hooks from $DSH_HOME/hooks.json; today one
+# PreToolUse hook on `bash` (hooks/guard-shell.py). Staging's own copy of hooks.json.
+- insert:
+    - id: hooks-claude-code
+      name: '@deepseek-ai/dsh-hooks-claude-code'
+      config:
+        configPath: /home/hugo/.vesta-harness-staging/hooks.json
+        projectDir: /home/hugo
+
+# Own-history search (roadmap T2): one index file per home; opened at the first search.
+- id: session-query-sqlite
+  config:
+    path: /home/hugo/.vesta-harness-staging/session-search.db
+    openAt: first-search
+
+# Home Assistant MCP (roadmap T9): present but DISABLED on staging (Hugo, 2026-09-25), so nothing
+# tried on staging touches the house. To test the house from staging, set `disabled: false` and
+# restart the staging unit; the token comes from $DSH_HOME/.env (HOME_ASSISTANT_MCP_TOKEN) as on
+# production, and hooks/guard-ha-mcp.py still asks before lock, heating and irreversible calls.
+- insert:
+    - id: mcp-home-assistant
+      name: '@deepseek-ai/dsh-mcp-client'
+      disabled: true
+      config:
+        serverName: home-assistant
+        transport: streamable-http
+        url: http://127.0.0.1:8123/api/mcp
+        headers:
+          Authorization: !!js '`Bearer ${process.env.HOME_ASSISTANT_MCP_TOKEN}`'

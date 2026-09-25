@@ -7,6 +7,7 @@ export const BRAND_NS = 'brand.vesta'
 export const zh = {
   'brand.name': 'vesta',
   'brand.suffix': 'harness',
+  'brand.suffix.staging': 'staging',
   'home.label': 'Vesta 主页',
 } satisfies Record<string, string>
 
@@ -17,5 +18,6 @@ export type BrandKey = keyof typeof zh
 export const en = {
   'brand.name': 'vesta',
   'brand.suffix': 'harness',
+  'brand.suffix.staging': 'staging',
   'home.label': 'Vesta home',
 } satisfies Record<BrandKey, string>

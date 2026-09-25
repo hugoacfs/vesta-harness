@@ -6,14 +6,37 @@
 # the <title> in apps/web/index.html no longer sticks. Use this wrapper instead of a bare
 # `pnpm run build` in every update procedure.
 #
-#   vesta-build            # pnpm install --frozen-lockfile && pnpm run build, titled "vesta harness"
-#   vesta-build --no-install
+# Since 2026-09-25 (Pipeline S) the build knows which instance it is for:
+#   vesta-build                  # the environment follows the checkout's branch: staging → staging, else prod
+#   vesta-build staging          # explicit: title "vesta harness · staging", the sidebar wordmark reads "staging"
+#   vesta-build prod             # explicit: title "vesta harness"
+#   vesta-build [env] --no-install
+# Every DSH_CLIENT_* variable is inlined into the client bundle (scripts/client-build-environment.ts),
+# which is how DSH_CLIENT_VESTA_ENV reaches ui-vesta-brand.
 set -eu
-export DSH_CLIENT_TITLE="${DSH_CLIENT_TITLE:-vesta harness}"
+env=""
+install=1
+for arg in "$@"; do
+  case "$arg" in
+    prod|staging) env="$arg" ;;
+    --no-install) install=0 ;;
+    *) echo "vesta-build: unknown argument '$arg' (expected prod, staging or --no-install)" >&2; exit 2 ;;
+  esac
+done
+if [ -z "$env" ]; then
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  if [ "$branch" = "staging" ]; then env=staging; else env=prod; fi
+fi
+if [ "$env" = "staging" ]; then
+  export DSH_CLIENT_TITLE="${DSH_CLIENT_TITLE:-vesta harness · staging}"
+else
+  export DSH_CLIENT_TITLE="${DSH_CLIENT_TITLE:-vesta harness}"
+fi
+export DSH_CLIENT_VESTA_ENV="$env"
 # Remote (tailnet) browsers persist settings on the Host instead of process-local memory:
 # this is what makes the one-time welcome notice stay acknowledged (see VESTA.md fork patches).
 export DSH_CLIENT_SETTINGS_PERSISTENCE="${DSH_CLIENT_SETTINGS_PERSISTENCE:-host}"
 export PATH="$HOME/.local/bin:$HOME/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin:$PATH"
-[ "${1:-}" = "--no-install" ] || pnpm install --frozen-lockfile
+if [ "$install" = 1 ]; then pnpm install --frozen-lockfile; fi
 pnpm run build
-echo "vesta-build: built $(git rev-parse --short HEAD 2>/dev/null || echo '?') with DSH_CLIENT_TITLE=\"$DSH_CLIENT_TITLE\" DSH_CLIENT_SETTINGS_PERSISTENCE=$DSH_CLIENT_SETTINGS_PERSISTENCE"
+echo "vesta-build: built $(git rev-parse --short HEAD 2>/dev/null || echo '?') for $env with DSH_CLIENT_TITLE=\"$DSH_CLIENT_TITLE\" DSH_CLIENT_VESTA_ENV=$DSH_CLIENT_VESTA_ENV DSH_CLIENT_SETTINGS_PERSISTENCE=$DSH_CLIENT_SETTINGS_PERSISTENCE"
