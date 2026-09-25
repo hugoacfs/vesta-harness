@@ -1,0 +1,49 @@
+/* The home link sits in the sidebar foot above Settings and takes the
+   Settings trigger's geometry: a 42px row with 12px rounding when wide, the
+   36x36 rail box when collapsed. Colours come from the theme aliases. */
+
+.link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  margin: 2px 0 0;
+  padding: 0 10px 0 8px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  text-decoration: none;
+}
+
+.link:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.link.rail {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+}
+
+.icon {
+  flex: none;
+  color: var(--dsw-alias-label-secondary, currentColor);
+}
+
+.link:hover .icon {
+  color: inherit;
+}
+
+.label {
+  overflow: hidden;
+  white-space: nowrap;
+}

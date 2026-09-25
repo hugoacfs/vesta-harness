@@ -12,7 +12,7 @@ Everything Vesta is additive — new packages, one bundle, one profile, and a de
 |---|---|---|
 | `packages/bundle/vesta-app/` | `@deepseek-ai/dsh-vesta-app` | the Vesta patch layer over `dsh-web-app`: brand + theme rows, vesta MCP servers |
 | `packages/client/ui-vesta-theme/` | `@deepseek-ai/dsh-client-ui-vesta-theme` | ember `--dsw-*` token layer, self-hosted fonts, ambient ground |
-| `packages/client/ui-vesta-brand/` | `@deepseek-ai/dsh-client-ui-vesta-brand` | sidebar mark + name, hero orb |
+| `packages/client/ui-vesta-brand/` | `@deepseek-ai/dsh-client-ui-vesta-brand` | sidebar mark + name, hero orb, the `Vesta home` link at the sidebar foot (2026-09-25) |
 | `packages/vesta/vesta-notify/` | `@deepseek-ai/dsh-vesta-notify` | host notifier: Telegram pings through the send-only MCP for finished long turns and waiting approvals or questions while no tab is visible |
 | `packages/client/ui-vesta-presence/` | `@deepseek-ai/dsh-client-ui-vesta-presence` | visible-tab heartbeat that feeds the notifier |
 | `packages/vesta/vesta-sessions/` | `@deepseek-ai/dsh-vesta-sessions` | host session routes: archived list, restore, delete for good (exported to `~/backups/sessions-deleted/` first; open sessions refused) |

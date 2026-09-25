@@ -77,6 +77,8 @@ vesta-url staging    # …/harness-staging/?token=… (the legacy VESTA_UNIT=ves
 
 `vesta-url` reads the token from the unit's journal (the process's own start line, else the unit's newest one), works from ssh/cron without a login session (it sets the user-bus variables itself), and **probes the URL before printing it**: the harness must answer `303` to the exchange, otherwise it explains what is wrong (`401` = the token belongs to an older process, restart or wait for the new start line; other codes = the reverse proxy or the unit). `--no-check` or `VESTA_URL_CHECK=0` skips the probe; `VESTA_BASE` overrides the base URL for a dedicated-port rollback.
 
+Back to the landing page (2026-09-25): the sidebar foot carries a `Vesta home` link to `/`, the landing page of the shared host (which lists both harnesses and Vesta Voice). It is rendered by `ui-vesta-brand` in the `sidebar.footer.action` slot: icon and label when the sidebar is wide, the icon with a title on the rail. The vesta-voice page has the same link in its header.
+
 ## Verify
 
 - `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3081/` → `401` (the auth gate; a `404` in the first seconds after a restart only means the fallback route is not registered yet).

@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-vesta-brand",
-  "description": "Vesta Harness brand occupants for the web client: sidebar mark and name, and the conversation hero orb",
+  "description": "Vesta Harness brand occupants for the web client: sidebar mark and name, the conversation hero orb, and the home link at the sidebar foot",
   "version": "0.1.0",
   "private": true,
   "type": "module",
