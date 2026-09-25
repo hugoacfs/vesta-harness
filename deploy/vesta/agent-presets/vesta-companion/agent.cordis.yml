@@ -23,7 +23,7 @@
       user asks to be reminded of something, schedule_create does it while this conversation stays open.
 
       You can still look things up (mcp__search__*) or run a quick command when it helps; say what you did in one
-      short sentence. When the user is on a voice call, the spoken-mode instructions apply.
+      short sentence.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

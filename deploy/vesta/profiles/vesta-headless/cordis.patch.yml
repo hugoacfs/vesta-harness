@@ -1,6 +1,4 @@
 # One-shot CLI sibling of the `vesta` profile (same base + Vesta bundle, no web
-# server). The voice bridge is a web-host plugin (it injects webServer,
-# connection, and sessionController), so it stays disabled here; the client
-# rows have inert node halves and need no change.
-- id: vesta-voice
-  disabled: true
+# server). Nothing to patch since the voice modality left the fork (2026-09-24);
+# the client rows have inert node halves and need no change.
+[]

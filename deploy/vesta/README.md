@@ -4,7 +4,7 @@ Everything here runs as `hugo` on vesta from the source checkout `~/code/vesta-h
 
 ## Server documentation
 
-This runbook covers the harness only. The server it runs on (stacks, ports, GPUs, exposure, change history) is documented in the canonical docs repo `~/vesta-docs` on vesta (`github.com/hugoacfs/vesta-docs`, published at `https://vesta.tail22b555.ts.net/docs/`); its `services/vesta-harness.md` and `services/voice.md` are the server-side views of this deployment, and its `AGENTS.md` carries the hard rules (GPU pinning, bindings, secrets). Agents inside harness sessions start from `~/workspace/dsh-chat/AGENTS.md`. Keep both in step: anything here that changes what runs or binds gets a dated entry in that README.
+This runbook covers the harness only. The server it runs on (stacks, ports, GPUs, exposure, change history) is documented in the canonical docs repo `~/vesta-docs` on vesta (`github.com/hugoacfs/vesta-docs`, published at `https://vesta.tail22b555.ts.net/docs/`); its `services/vesta-harness.md` is the server-side view of this deployment (voice is its own project, `services/vesta-voice.md`), and its `AGENTS.md` carries the hard rules (GPU pinning, bindings, secrets). Agents inside harness sessions start from `~/workspace/dsh-chat/AGENTS.md`. Keep both in step: anything here that changes what runs or binds gets a dated entry in that README.
 
 ## Layout
 
@@ -63,7 +63,7 @@ systemctl --user status vesta-harness --no-pager
 docker exec reverse-proxy nginx -t && docker exec reverse-proxy nginx -s reload
 ```
 
-The app assumes the site root unless `DSH_BASE_PATH` is set. With it, `frontend-static` emits `<base href="/harness/">`, the clients resolve every Host call (RPC, the gateway stream-mux WebSocket, HMR, uploads, the voice token and emotion routes) against `document.baseURI`, the post-login redirect lands on the prefix, plugin bundle URLs carry it, and the inlined Vesta font URLs are rewritten onto it (commits `a9ea2fd9fb`..`6eaee28660`). Dedicated-port fallback, no nginx involved: remove the drop-in, `systemctl --user daemon-reload && systemctl --user restart vesta-harness`, `tailscale serve --bg --https=8790 http://127.0.0.1:3081`, then `VESTA_BASE=https://vesta.tail22b555.ts.net:8790 vesta-url`.
+The app assumes the site root unless `DSH_BASE_PATH` is set. With it, `frontend-static` emits `<base href="/harness/">`, the clients resolve every Host call (RPC, the gateway stream-mux WebSocket, HMR, uploads) against `document.baseURI`, the post-login redirect lands on the prefix, plugin bundle URLs carry it, and the inlined Vesta font URLs are rewritten onto it (commits `a9ea2fd9fb`..`6eaee28660`). Dedicated-port fallback, no nginx involved: remove the drop-in, `systemctl --user daemon-reload && systemctl --user restart vesta-harness`, `tailscale serve --bg --https=8790 http://127.0.0.1:3081`, then `VESTA_BASE=https://vesta.tail22b555.ts.net:8790 vesta-url`.
 
 ## First visit from a browser
 
@@ -82,7 +82,7 @@ vesta-url staging    # …/harness-staging/?token=… (the legacy VESTA_UNIT=ves
 - `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3081/` → `401` (the auth gate; a `404` in the first seconds after a restart only means the fallback route is not registered yet).
 - `https://vesta.tail22b555.ts.net/harness/` → `401` without the cookie; with it the index carries `<base href="/harness/">`, the three Vesta fonts (Inter, Space Grotesk, JetBrains Mono) load under the prefix, and the page shows the brand (veiled-goddess emblem, lowercase “vesta harness_” wordmark) on the ember theme.
 - A new session answers through Qwen (`default`); `mcp__memory__*`, `mcp__search__*` and `mcp__telegram-notify__notify` appear once each in the tool list; the hero shows `Vesta Default`; `/permission` lists `read-only`, `workspace-write`, `danger-full-access`.
-- Since the 0.1.5 sync: `curl -b <jar> https://vesta.tail22b555.ts.net/harness/open-in-app/apps` → `200` (upstream's desktop hand-off probe, made base-relative in the fork); a session RPC `session/create` with each preset (`vesta-default`, `vesta-orch`, `vesta-voice`) returns a session id — a preset that fails to mount breaks new sessions AND resumes, so check it right after every update.
+- Since the 0.1.5 sync: `curl -b <jar> https://vesta.tail22b555.ts.net/harness/open-in-app/apps` → `200` (upstream's desktop hand-off probe, made base-relative in the fork); a session RPC `session/create` with each preset (`vesta-default`, `vesta-orch`) returns a session id — a preset that fails to mount breaks new sessions AND resumes, so check it right after every update.
 
 ## Upstream base 0.1.6-alpha.2 (staging 2026-09-18, production 2026-09-19)
 

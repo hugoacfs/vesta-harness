@@ -41,7 +41,7 @@ llm-pi-ai:
           compat:
             thinkingFormat: qwen-chat-template
             supportsThinkingTokenBudget: true
-        # `assistant` (Ornith 9B) retired 2026-09-06: the lane is off (the 3060 carries voice); the
+        # `assistant` (Ornith 9B) retired 2026-09-06: the lane is off (the 3060 belongs to the vesta-voice project's speech models); the
         # alias stays in LiteLLM for legacy clients but is not offered here. Subagents run on `default`.
         # Vesta is dark-first: the ember token layer carries both palettes, but the
         # ambient ground and the brand gradient are designed for dark.
