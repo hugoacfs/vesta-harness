@@ -104,6 +104,19 @@ The voice modality built between 2026-09-05 and 2026-09-23 — a LiveKit call bo
 
 What stays from that work: the memory-notes step message and the rule behind it (charter D19), the `vesta-companion` preset (generated from the voice preset, no dependency on it), and the lessons in the `VESTA-PLAN.md` log. Old runbook text for the stack is in the tag.
 
+### Promotion of the retirement to production (P17), ready on 2026-09-25
+
+Staging carries `af2018716b` (the removal plus the last leftovers) verified: roster of ten presets, Companion answers, no mic button, the headless profile answers `pong`. Production is at `eff0a57a26` with the mic button dead since the containers stopped. The recipe, gated by Hugo:
+
+1. Decide what happens to the six production sessions recorded on the removed preset (`--home-hugo-workspace-chat--/session-63f1be80…`, `…a6b0f6cf…`, `--home-hugo-workspace-dsh-chat--/session-3cbd6e75…`, `…676b072a…`, `…b1ee884b…`, `…d002175d…`): they no longer resume (`agent-presets: preset "vesta-voice" not found`). Either keep a copy of the old preset directory in `~/.vesta-harness/.agent-presets/vesta-voice` as a compatibility shim (it shows in the picker), or rewrite their headers to `vesta-companion` after backing the six directories up, or leave them unopenable. Hugo's call.
+2. `cd ~/code/vesta-harness && git fetch origin && git merge --ff-only origin/staging` (this also brings D19 and the two 09-23 voice-worker commits, whose files no longer exist), then `LEFTHOOK=0 git push origin vesta`.
+3. `git clean -fdx services` in the production checkout (ignored build leftovers of the old workers), then `deploy/vesta/bin/vesta-build`, then `cd native/system && pnpm build:native` only if `native/` changed (it did not).
+4. Backup: `tar czf ~/backups/prod-home-config-before-p17-$(date -u +%Y%m%dT%H%M).tgz -C ~ .vesta-harness/settings.yaml .vesta-harness/cordis.patch.yml .vesta-harness/profiles .vesta-harness/.agent-presets`.
+5. Wait for no running turn (`session/list`), `systemctl --user stop vesta-harness`, then in the home: `rm -rf .agent-presets/vesta-voice` (a copy is in `~/backups/voice-stack-retired-20260924/preset-vesta-voice-prod`), `cp` the versioned `profiles/vesta-headless/cordis.patch.yml` and the refreshed `agent-presets/vesta-companion/*` and `settings.yaml` (comment-only change) from the checkout, then `systemctl --user start vesta-harness`.
+6. Verify over RPC and in the browser: roster of ten presets, a Companion session answers, no mic button in the composer, `/memory` answers (D19 moved the recall into a step message), the headless `pong`.
+7. Tag `vesta-stable-<date>-p17`, docs break (this runbook, `VESTA.md`, `VESTA-PLAN.md`, `~/vesta-docs` roadmap and README history, memory).
+8. Optional, Hugo's call: reclaim the stopped stack's images (`livekit-agent` ×2, `livekit-media` 16 GB, `moshi-server` 30 GB, `kyutai-tts` 22 GB, `livekit-frontend`, `livekit-webui`, `livekit-server`: about 75 GB) with `docker compose down --rmi all` in `/srv/ai/compose/{livekit-voice,moshi-server,kyutai-tts}`; the compose directories and the backup archive stay.
+
 ## Notifications (Telegram) and presence
 
 Since 2026-09-11 (feature plan P2) the harness pings you on Telegram when nobody is looking. Host plugin `vesta-notify` (`packages/vesta/vesta-notify`, mounted by the `vesta-app` bundle) watches every Session's durable log and the approval / question waterfalls; the browser half `ui-vesta-presence` posts a heartbeat to `POST /api/vesta/notify/presence` every 30 s while a tab is visible. Delivery is a stateless streamable-HTTP `tools/call` to the send-only Telegram MCP (`ai-telegram-mcp`, loopback `127.0.0.1:7335`, tool `notify`); the bot token stays inside that container.
