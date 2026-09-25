@@ -4,7 +4,7 @@
 #   sh ~/code/vesta-harness-staging/deploy/vesta/verify/homes-drift.sh
 # Production is compared with the production checkout's templates, staging with the staging
 # checkout's. Known, intended divergence: the staging settings carry the `ceres` model alias
-# (2026-09-06). Secrets never appear: settings live apart from credentials, and the diff lines
+# (2026-09-06); the staging hooks.json names its own home, so its paths are normalised first. Secrets never appear: settings live apart from credentials, and the diff lines
 # are filtered by key name anyway.
 set -u
 LIMIT="${LIMIT:-40}"
@@ -13,6 +13,11 @@ pair() { # label template live
   if [ ! -f "$3" ]; then echo "MISSING live      $1 ($3)"; return; fi
   if diff -q "$2" "$3" >/dev/null 2>&1; then echo "same    $1"
   else echo "DRIFT   $1"; diff -u "$2" "$3" | grep -v -i 'apikey\|api_key\|token\|secret\|password' | sed 's/^/        /' | head -n "$LIMIT"; fi
+}
+pairnorm() { # label template live — the staging home's paths read as production's before the diff
+  tmpl=$(mktemp); live=$(mktemp)
+  sed 's#/\.vesta-harness-staging/#/.vesta-harness/#g' "$2" > "$tmpl"; sed 's#/\.vesta-harness-staging/#/.vesta-harness/#g' "$3" > "$live"
+  pair "$1" "$tmpl" "$live"; rm -f "$tmpl" "$live"
 }
 presets() { # label template-dir live-dir
   if diff -rq "$2" "$3" >/dev/null 2>&1; then echo "same    $1"; else echo "DRIFT   $1"; diff -rq "$2" "$3" | sed 's/^/        /' | head -n "$LIMIT"; fi
@@ -29,5 +34,5 @@ echo "== staging: $SH against $S ($(git -C "$HOME/code/vesta-harness-staging" re
 pair "settings.yaml (ceres alias is expected)" "$S/settings.yaml" "$SH/settings.yaml"
 pair "home patch"     "$S/staging-home-cordis.patch.yml"     "$SH/cordis.patch.yml"
 pair "profile patch"  "$S/staging-cordis.patch.yml"          "$SH/profiles/vesta/cordis.patch.yml"
-pair "hooks.json"     "$S/hooks/hooks.json"                  "$SH/hooks.json"
+pairnorm "hooks.json (paths normalised)" "$S/hooks/hooks.json" "$SH/hooks.json"
 presets "presets"     "$S/agent-presets"                     "$SH/.agent-presets"

@@ -10,6 +10,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "mcp__home-assistant__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/hugo/.vesta-harness/hooks/guard-ha-mcp.py",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }

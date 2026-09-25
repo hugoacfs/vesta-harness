@@ -15,5 +15,6 @@ None; this package neither assembles nor sends a provider request.
 ## Known Limitations and Deferred Work
 
 - The hero mark inherits the hero's geometry class sized for the 34×25 fish; the emblem renders 34×34 inside it.
+- Since 2026-09-25 the wordmark suffix reads `staging` when the bundle was built with `DSH_CLIENT_VESTA_ENV=staging` (`vesta-build` on the `staging` branch; every `DSH_CLIENT_*` variable is inlined at build time), `harness` otherwise.
 - Since 2026-09-25 the sidebar foot carries the `Vesta home` link (Hugo's ask: a way back to the landing page from the harness and from the vesta-voice page alike); it is a plain anchor, so a running turn keeps running on the host when the tab leaves.
 - Since 2026-09-10 the mark is the veiled-goddess emblem (flat, ember palette) and the name is the lowercase `vesta harness` wordmark under one ember gradient with a blinking terminal caret (`_`, hidden from assistive tech, still under `prefers-reduced-motion`); the ambient ground (grain, 44px grid, slow breathe) lives in `ui-vesta-theme`.
