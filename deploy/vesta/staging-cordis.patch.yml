@@ -8,14 +8,21 @@
 # bot of its own may come later; until then, to exercise the pings from staging, set `disabled`
 # to false, restore the short thresholds below (2026-09-11: minutes instead of the plugin's
 # 120 s / 60 s / 90 s; a patch replaces the whole config, so linkBase is restated) and restart.
+#
+# Since 2026-09-30 (PWA hardening, D22) the row is on with the Web Push channel only: Telegram
+# stays off here, so `channels: [push]` (the bundle's production row says [telegram, push]).
+# The short thresholds mean a phone test needs a 20 s turn, not a two-minute one. A patch
+# replaces the whole config, so linkBase and excludePresets are restated. Back to quiet:
+# `disabled: true` on this row and a restart.
 - id: vesta-notify
-  disabled: true
-  # config:
-  #   linkBase: https://vesta.tail22b555.ts.net/harness-staging/
-  #   minTurnSeconds: 20
-  #   approvalWaitSeconds: 10
-  #   awayAfterSeconds: 30
-  #   cooldownSeconds: 30
+  config:
+    linkBase: https://vesta.tail22b555.ts.net/harness-staging/
+    channels: [push]
+    minTurnSeconds: 20
+    approvalWaitSeconds: 10
+    awayAfterSeconds: 30
+    cooldownSeconds: 30
+    excludePresets: [vesta-incognito, vesta-routine]
 
 # Phase 4: deleted sessions from staging are exported apart from production ones.
 - id: vesta-sessions
