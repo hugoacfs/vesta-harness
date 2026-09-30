@@ -1,8 +1,10 @@
-// vesta-voice, one bubble per turn (2026-09-29, staging): the page is handed the messages the service sends
+// vesta-voice, one bubble per turn (2026-09-29): the page is handed the messages the service sends
 // while it hears a sentence in pieces; it must show one bubble that grows, greyed until final, and a new
 // bubble for the next turn. (Headless Chrome on the Mac cannot play a file as its microphone.)
+// VESTA_TARGET=prod for /voice/ (turn hearing is there since 2026-09-30); default staging.
 const puppeteer = (await import('puppeteer-core')).default;
-const base = 'https://vesta.tail22b555.ts.net/voice-staging/';
+const target = process.env.VESTA_TARGET === 'prod' ? 'prod' : 'staging';
+const base = target === 'prod' ? 'https://vesta.tail22b555.ts.net/voice/' : 'https://vesta.tail22b555.ts.net/voice-staging/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const browser = await puppeteer.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const you = p => p.evaluate(() => [...document.querySelectorAll('.line.you')].map(n => (n.classList.contains('interim') ? '~ ' : '') + n.textContent.replace(/^you/, '').trim()));
@@ -29,6 +31,6 @@ try {
   console.log(JSON.stringify(end));
   console.log(end.length === 2 && !end[0].startsWith('~') && end[0].endsWith('GitHub Copilot?') ? 'PASS: one bubble per turn' : 'FAIL');
   console.log('page errors:', JSON.stringify(errors));
-  await page.screenshot({ path: '/tmp/vesta-shots/voice-bubbles.png' });
+  await page.screenshot({ path: `/tmp/vesta-shots/voice-bubbles-${target}.png` });
   await page.click('#end').catch(() => {}); await sleep(500);
 } finally { await browser.close(); }
