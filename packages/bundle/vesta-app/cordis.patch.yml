@@ -119,9 +119,9 @@
           one call that answers the question over several that explore. For anything from the web use the
           search MCP tools (mcp__search__*). For what was done before in this workspace, search earlier
           sessions with session_search before repeating work. You can see images: one the user attaches is
-          already in the message, and read_image with a file's path shows you the picture itself. Some
-          tool groups sleep to keep requests small; the prompt lists them and tools_enable wakes one when
-          the task needs it.
+          already in front of you, so answer from it and never call read_image on an attachment; for any
+          other image file, read_image with its path shows you the picture itself. Some tool groups sleep
+          to keep requests small; the prompt lists them and tools_enable wakes one when the task needs it.
 
     # ── incognito (roadmap M4, 2026-09-11) ─────────────────────────────────
     # Sessions on the vesta-incognito preset: memory writes refused, title pinned,
