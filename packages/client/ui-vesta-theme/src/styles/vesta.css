@@ -1,6 +1,6 @@
-/* Vesta Harness global sheet: self-hosted fonts and the ambient ground.
-   Colors live in the token layer (tokens.ts); this sheet carries only what a
-   token cannot express. Font files are served from /vesta/fonts by the web
+/* Vesta Harness global sheet: self-hosted fonts, the ambient ground and the
+   phone shell (safe areas, on-screen keyboard). Colors live in the token layer
+   (tokens.ts); this sheet carries only what a token cannot express. Font files are served from /vesta/fonts by the web
    client's static dist server (apps/web/public/vesta/fonts, SIL OFL 1.1). */
 
 @font-face {
@@ -66,4 +66,33 @@ body[data-ds-dark-theme]::after {
   body[data-ds-dark-theme]::after {
     animation: none;
   }
+}
+
+/* Phone shell. apps/web/index.html sets viewport-fit=cover, and the manifest
+   asks for black-translucent status-bar text, so the page runs edge to edge
+   under the notch, the home indicator and, in landscape, the side cut-outs.
+   The safe-area insets are padding on body (html, body and #root are
+   height: 100%, so #root shrinks with it); the body background still paints
+   the canvas behind the padding. Every inset is 0 on a desktop browser, so
+   this does nothing there. position: fixed overlays ignore the padding. */
+body {
+  box-sizing: border-box;
+  padding:
+    env(safe-area-inset-top, 0px)
+    env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px)
+    env(safe-area-inset-left, 0px);
+}
+
+/* While a phone keyboard is open (client/viewport.ts sets the attribute and the
+   property), the page is exactly the visible area: the header stays on screen
+   and the composer sits on the keyboard. The home indicator is under the
+   keyboard then, so the bottom inset goes. */
+html[data-vesta-keyboard] {
+  height: var(--vesta-visual-height, 100%);
+  overflow: hidden;
+}
+
+html[data-vesta-keyboard] body {
+  padding-bottom: 0;
 }
