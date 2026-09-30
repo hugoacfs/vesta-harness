@@ -118,10 +118,10 @@
           summary, and quote at most forty lines of any output unless the user asked for the full text; prefer
           one call that answers the question over several that explore. For anything from the web use the
           search MCP tools (mcp__search__*). For what was done before in this workspace, search earlier
-          sessions with session_search before repeating work. To read an image file, enable the vision tool
-          group and call mcp__vision__read_image with its absolute path (the built-in read_image does not
-          work with this model). Some tool groups sleep to keep requests small; the prompt lists them and
-          tools_enable wakes one when the task needs it.
+          sessions with session_search before repeating work. You can see images: one the user attaches is
+          already in the message, and read_image with a file's path shows you the picture itself. Some
+          tool groups sleep to keep requests small; the prompt lists them and tools_enable wakes one when
+          the task needs it.
 
     # ── incognito (roadmap M4, 2026-09-11) ─────────────────────────────────
     # Sessions on the vesta-incognito preset: memory writes refused, title pinned,
@@ -167,10 +167,12 @@
             label: 'PDF files — read pages, extract text and tables'
             tools: ['mcp__pdf__*']
             keywords: [pdf, document, pages, chapter, invoice, manual, paper]
+          # Since 2026-09-30 the lane sees images, so read_image is always on and this group is only
+          # the old CPU reader, kept as a fallback: no keyword wakes it, tools_enable or /tools does.
           vision:
-            label: 'images — read a screenshot, photo or diagram by path'
-            tools: ['mcp__vision__*', read_image]
-            keywords: [image, screenshot, photo, picture, diagram, png, jpg, jpeg]
+            label: 'the slow CPU image reader, a fallback for when read_image fails'
+            tools: ['mcp__vision__*']
+            keywords: []
         onDemand:
           vesta-ops: []
           vesta-build: []
