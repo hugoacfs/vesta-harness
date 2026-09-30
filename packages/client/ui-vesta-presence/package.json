@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-vesta-presence",
-  "description": "Vesta presence heartbeat for the web client: tells the Host while a tab is visible, so vesta-notify knows when the user is away",
+  "description": "Vesta presence heartbeat for the web client: tells the Host while a tab is visible, so vesta-notify knows when the user is away, and reconnects a tab resumed from the background",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -20,7 +20,9 @@
   },
   "dsh": {
     "client": {
-      "inject": [],
+      "inject": [
+        "@deepseek-ai/dsh-client-connection"
+      ],
       "platform": "web"
     }
   },
@@ -33,7 +35,8 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-client-connection": "workspace:^"
   },
   "files": [
     "lib/index.js",

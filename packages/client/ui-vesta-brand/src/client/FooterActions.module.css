@@ -1,0 +1,20 @@
+/* The sidebar's footer list is a flex row; the Vesta rows stack inside this one
+   occupant. Children are sized by their own geometry (42px rows wide, 36px
+   boxes on the rail), never stretched vertically. */
+
+.stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stack > a,
+.stack > button {
+  flex: none;
+}
+
+.stack.rail {
+  flex: none;
+  align-items: center;
+}

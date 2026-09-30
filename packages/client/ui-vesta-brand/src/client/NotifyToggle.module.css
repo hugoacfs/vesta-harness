@@ -1,0 +1,83 @@
+/* The alerts toggle sits under the home link in the sidebar foot and takes the
+   same geometry: a 42px row with 12px rounding when wide, the 36x36 rail box
+   when collapsed. It is a <button>, so the UA chrome is reset here. Colours
+   come from the theme aliases; the "on" state uses the ember token. */
+
+.toggle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  margin: 2px 0 0;
+  padding: 0 10px 0 8px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toggle:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--vesta-ember-1, #ffc46b);
+  outline-offset: -2px;
+}
+
+.toggle:disabled {
+  cursor: default;
+}
+
+.toggle.rail {
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+}
+
+.icon {
+  flex: none;
+  color: var(--dsw-alias-label-secondary, currentColor);
+}
+
+.on .icon {
+  color: var(--vesta-ember-1, #ffc46b);
+}
+
+.toggle:hover:not(:disabled):not(.on) .icon {
+  color: inherit;
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A state the user cannot change from here (not installed, blocked in system
+   settings): the row reads as information rather than a control. */
+.note {
+  color: var(--dsw-alias-label-secondary, currentColor);
+}
+
+.busy {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .icon {
+    transition: color 0.15s ease;
+  }
+}

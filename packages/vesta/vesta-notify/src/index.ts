@@ -1,18 +1,33 @@
 /**
- * Vesta notify, host plugin. Sends the user a Telegram message through the
- * send-only notifier MCP (`ai-telegram-mcp`, loopback) when something worth a
- * glance happens while no browser tab is looking at the harness: a turn that
- * ran longer than a threshold finished, or an approval / question has been
+ * Vesta notify, host plugin. Tells the user when something worth a glance
+ * happens while no browser tab is looking at the harness: a turn that ran
+ * longer than a threshold finished, or an approval / question has been
  * waiting for a decision. Presence comes from the browser half
  * (`ui-vesta-presence`), which heartbeats `POST /api/vesta/notify/presence`
- * while a tab is visible. The bot token never reaches the harness: the MCP
- * server pins the recipient and only takes text.
+ * while a tab is visible.
+ *
+ * Two channels, chosen by `channels`:
+ *   - `telegram`: a message through the send-only notifier MCP
+ *     (`ai-telegram-mcp`, loopback). The bot token never reaches the harness:
+ *     the MCP server pins the recipient and only takes text.
+ *   - `push`: a Web Push notification to the phones and browsers that
+ *     subscribed through the routes in `push-channel.ts` (off by default).
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { DEFAULT_ALLOWED_HOSTS } from './push.ts'
+import {
+  PUSH_KEY_PATH,
+  PUSH_SUBSCRIBE_PATH,
+  PUSH_UNSUBSCRIBE_PATH,
+  PushChannel,
+  resolveSubject,
+} from './push-channel.ts'
+import { PushStore } from './push-store.ts'
 
 export const name = 'vesta-notify'
 
@@ -46,7 +61,33 @@ export interface Config {
   silent: boolean
   /** Link appended to every message (the harness URL); empty omits it. @default '' */
   linkBase: string
+  /** Where notifications go: `telegram`, `push`, or both. An unknown name fails the plugin at load. @default ['telegram'] */
+  channels: string[]
+  /** Web Push settings; used only when `channels` includes `push`. */
+  push: PushConfig
 }
+
+/** Web Push settings. */
+export interface PushConfig {
+  /** VAPID contact URL, `https:` or `mailto:`; empty uses `linkBase` when that is https. @default '' */
+  subject: string
+  /** JSON file holding the VAPID key pair and subscriptions (0600); empty = `$DSH_HOME/vesta-push.json`. @default '' */
+  storeFile: string
+  /** Host suffixes a subscription endpoint may use; anything else is refused. @default apple, google, mozilla, windows push services */
+  allowedHosts: string[]
+  /** How long a push service may hold a message for an offline device, in seconds. @default 3600 */
+  ttlSeconds: number
+}
+
+const DEFAULT_PUSH: PushConfig = {
+  subject: '',
+  storeFile: '',
+  allowedHosts: [...DEFAULT_ALLOWED_HOSTS],
+  ttlSeconds: 3600,
+}
+
+/** The channels this plugin can deliver through. */
+const CHANNELS = ['telegram', 'push']
 
 /** Validate the notifier configuration. */
 export const Config: z<Config> = z.object({
@@ -61,6 +102,13 @@ export const Config: z<Config> = z.object({
   quietHours: z.string().default(''),
   silent: z.boolean().default(false),
   linkBase: z.string().default(''),
+  channels: z.array(z.string()).default(['telegram']),
+  push: z.object({
+    subject: z.string().default(''),
+    storeFile: z.string().default(''),
+    allowedHosts: z.array(z.string()).default(DEFAULT_PUSH.allowedHosts),
+    ttlSeconds: z.number().default(DEFAULT_PUSH.ttlSeconds),
+  }).default(DEFAULT_PUSH),
 })
 
 type Trigger = 'turn' | 'approval' | 'question'
@@ -163,6 +211,25 @@ async function deliver(config: Config, title: string, message: string): Promise<
 }
 
 /**
+ * Build the Web Push channel, or fail the plugin when its settings cannot work.
+ * @param ctx - host plugin context (for the log).
+ * @param config - resolved plugin config.
+ * @returns the channel, with its key pair and subscriptions loading in the background.
+ */
+function createPushChannel(ctx: Context, config: Config): PushChannel {
+  const subject = resolveSubject(config.push.subject, config.linkBase)
+  if (subject === undefined) {
+    throw new Error('vesta-notify: the push channel needs push.subject (an https: or mailto: URL) or an https linkBase; Apple refuses other VAPID subjects')
+  }
+  const store = new PushStore(config.push.storeFile === '' ? dshHomePath('vesta-push.json') : config.push.storeFile)
+  store.ready().then(
+    () => { ctx.logger.info(`vesta-notify: push channel ready, ${String(store.list().length)} subscribed device(s)`) },
+    (error: unknown) => { ctx.logger.warn(error) },
+  )
+  return new PushChannel(store, { subject, allowedHosts: config.push.allowedHosts, ttlSeconds: config.push.ttlSeconds })
+}
+
+/**
  * Observe turns, approvals and questions; report the ones nobody is watching.
  * @param ctx - host plugin context.
  * @param config - resolved plugin config.
@@ -173,6 +240,13 @@ export function apply(ctx: Context, config: Config): void {
   const turnText = new Map<string, string>()
   const lastSent = new Map<string, number>()
   let lastVisibleAt = 0
+
+  const unknown = config.channels.filter(channel => !CHANNELS.includes(channel))
+  if (unknown.length > 0) {
+    throw new Error(`vesta-notify: unknown channel ${unknown.join(', ')}; use ${CHANNELS.join(' and/or ')}`)
+  }
+  const telegram = config.channels.includes('telegram')
+  const push = config.channels.includes('push') ? createPushChannel(ctx, config) : undefined
 
   const away = (): boolean => Date.now() - lastVisibleAt > config.awayAfterSeconds * 1000
 
@@ -187,10 +261,18 @@ export function apply(ctx: Context, config: Config): void {
     lastSent.set(key, Date.now())
     const title = `Vesta · ${(session !== undefined ? titleOf(session) : undefined) ?? sessionId.slice(0, 16)}`
     const message = config.linkBase === '' ? body : `${body}\n${config.linkBase}`
-    deliver(config, title, message).then(
-      () => { ctx.logger.info(`vesta-notify: sent (${trigger}) for ${sessionId}`) },
-      (error: unknown) => { ctx.logger.warn(error) },
-    )
+    if (telegram) {
+      deliver(config, title, message).then(
+        () => { ctx.logger.info(`vesta-notify: sent (${trigger}) for ${sessionId}`) },
+        (error: unknown) => { ctx.logger.warn(error) },
+      )
+    }
+    if (push !== undefined) {
+      push.send({ title, body, url: config.linkBase, tag: key }).then(
+        (result) => { ctx.logger.info(`vesta-notify: push (${trigger}) for ${sessionId}: ${String(result.sent)} sent, ${String(result.gone)} gone, ${String(result.failed)} failed`) },
+        (error: unknown) => { ctx.logger.warn(error) },
+      )
+    }
   }
 
   ctx.effect(() => {
@@ -212,6 +294,17 @@ export function apply(ctx: Context, config: Config): void {
     })
     return () => { void dispose() }
   }, 'vesta-notify: presence route')
+
+  if (push !== undefined) {
+    ctx.effect(() => {
+      const routes = [
+        connection.fetch.register({ path: PUSH_KEY_PATH, methods: ['GET'], requestBody: 'buffered', fetch: () => push.keyResponse() }),
+        connection.fetch.register({ path: PUSH_SUBSCRIBE_PATH, methods: ['POST'], requestBody: 'buffered', fetch: request => push.subscribeResponse(request) }),
+        connection.fetch.register({ path: PUSH_UNSUBSCRIBE_PATH, methods: ['POST'], requestBody: 'buffered', fetch: request => push.unsubscribeResponse(request) }),
+      ]
+      return () => { for (const dispose of routes) void dispose() }
+    }, 'vesta-notify: push routes')
+  }
 
   ctx.effect(() => ctx.on('session/event', (session, event) => {
     const record = event as { readonly type: string; readonly data?: unknown }

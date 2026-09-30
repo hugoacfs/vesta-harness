@@ -41,15 +41,19 @@
     - id: ui-vesta-routines
       name: '@deepseek-ai/dsh-client-ui-vesta-routines'
 
-    # ── notify: Telegram pings while no tab is looking ─────────────────────
-    # Delivery through the send-only telegram-notify MCP (ai-telegram-mcp on
-    # loopback 7335); the bot token never reaches the harness. Triggers and
-    # thresholds are the plugin defaults (long turn ≥ 120 s, approval or
-    # question waiting ≥ 60 s, only while no visible tab for 90 s).
+    # ── notify: Telegram and Web Push pings while no tab is looking ────────
+    # Telegram goes through the send-only telegram-notify MCP (ai-telegram-mcp on
+    # loopback 7335); the bot token never reaches the harness. Web Push reaches
+    # phones that installed the app to their home screen and subscribed from the
+    # sidebar toggle (keys and devices in $DSH_HOME/vesta-push.json; the VAPID
+    # subject is the https linkBase). Triggers and thresholds are the plugin
+    # defaults (long turn ≥ 120 s, approval or question waiting ≥ 60 s, only
+    # while no visible tab for 90 s). Drop `push` to go back to Telegram alone.
     - id: vesta-notify
       name: '@deepseek-ai/dsh-vesta-notify'
       config:
         linkBase: https://vesta.tail22b555.ts.net/harness/
+        channels: [telegram, push]
         # Incognito keeps quiet; routine threads report through vesta-routines instead.
         excludePresets: [vesta-incognito, vesta-routine]
 

@@ -10,6 +10,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import { installVestaStyles } from './styles.ts'
 import { VESTA_TOKENS } from './tokens.ts'
+import { browserHost, trackViewport } from './viewport.ts'
 
 export type { VestaTokenName } from './tokens.ts'
 
@@ -20,10 +21,15 @@ export const LAYER_SOURCE = '@deepseek-ai/dsh-client-ui-vesta-theme'
 export const inject = ['theme']
 
 /**
- * Client plugin body: mount the global sheet, then stack the ember layer.
+ * Client plugin body: mount the global sheet, follow the visual viewport while a
+ * phone keyboard is open, then stack the ember layer.
  * @param ctx - client cordis context.
  */
 export function apply(ctx: ClientContext): void {
   installVestaStyles(ctx)
+  ctx.effect(() => {
+    const host = browserHost()
+    return host === undefined ? () => undefined : trackViewport(host)
+  }, 'ui-vesta-theme: visual viewport')
   ctx.effect(() => ctx.theme.overrideTokens(LAYER_SOURCE, VESTA_TOKENS), 'ui-vesta-theme: ember token layer')
 }

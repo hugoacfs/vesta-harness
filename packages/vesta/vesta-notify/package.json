@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-vesta-notify",
-  "description": "Vesta notify: Telegram pings through the send-only notifier MCP when a long turn finishes or an approval waits while no browser tab is looking",
+  "description": "Vesta notify: pings through Telegram (the send-only notifier MCP) and Web Push when a long turn finishes or an approval waits while no browser tab is looking",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -20,6 +20,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-home-paths": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "peerDependencies": {

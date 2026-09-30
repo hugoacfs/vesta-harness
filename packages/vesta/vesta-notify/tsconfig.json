@@ -22,6 +22,9 @@
     },
     {
       "path": "../../interaction/user-questions"
+    },
+    {
+      "path": "../../util/home-paths"
     }
   ]
 }

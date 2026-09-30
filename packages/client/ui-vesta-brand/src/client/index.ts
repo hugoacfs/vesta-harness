@@ -8,11 +8,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { VestaBrandMark, VestaBrandName } from './Brand.tsx'
 import { VestaHeroMark } from './HeroMark.tsx'
-import { VestaHomeLink } from './HomeLink.tsx'
+import { VestaFooterActions } from './FooterActions.tsx'
 import { BRAND_NS, en, zh, type BrandKey } from './locales.ts'
 
 export type { VestaBrandNameProps } from './Brand.tsx'
+export type { VestaFooterActionsProps } from './FooterActions.tsx'
 export type { VestaHomeLinkProps } from './HomeLink.tsx'
+export type { VestaNotifyToggleProps } from './NotifyToggle.tsx'
 export type { BrandKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -28,7 +30,8 @@ export const inject = ['slots', 'locale']
 /**
  * Fill the sidebar brand slots as one declaration-aware registration set,
  * replace the conversation hero's fallback fish with the ember orb, and put
- * the link back to the Vesta landing page at the sidebar foot.
+ * the link back to the Vesta landing page and the phone-alerts toggle at the
+ * sidebar foot (one stacked occupant: the foot lays its occupants out in a row).
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -41,5 +44,5 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('conversation.hero.brand.mark', () =>
     ctx.slots.register({ name: 'conversation.hero.brand.mark' }, VestaHeroMark))
   ctx.slots.inject('sidebar.footer.action', () =>
-    ctx.slots.register({ name: 'sidebar.footer.action', id: 'vesta-home', order: 0, locale: BRAND_NS }, VestaHomeLink))
+    ctx.slots.register({ name: 'sidebar.footer.action', id: 'vesta-footer', order: 0, locale: BRAND_NS }, VestaFooterActions))
 }
