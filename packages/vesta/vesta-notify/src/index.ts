@@ -269,7 +269,7 @@ export function apply(ctx: Context, config: Config): void {
     }
     if (push !== undefined) {
       push.send({ title, body, url: config.linkBase, tag: key }).then(
-        result => { ctx.logger.info(`vesta-notify: push (${trigger}) for ${sessionId}: ${String(result.sent)} sent, ${String(result.gone)} gone, ${String(result.failed)} failed`) },
+        (result) => { ctx.logger.info(`vesta-notify: push (${trigger}) for ${sessionId}: ${String(result.sent)} sent, ${String(result.gone)} gone, ${String(result.failed)} failed`) },
         (error: unknown) => { ctx.logger.warn(error) },
       )
     }

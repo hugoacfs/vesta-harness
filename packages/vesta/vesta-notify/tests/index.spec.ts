@@ -96,16 +96,16 @@ describe('vesta-notify channels', () => {
   })
 
   it('fails loudly at load on an unknown channel', () => {
-    expect(() => apply(host().ctx, config({ channels: ['telegram', 'sms'] }))).toThrow('unknown channel sms')
+    expect(() =>{  apply(host().ctx, config({ channels: ['telegram', 'sms'] })) }).toThrow('unknown channel sms')
   })
 
   it('fails loudly at load when push has no usable VAPID subject', () => {
-    expect(() => apply(host().ctx, config({ channels: ['push'], linkBase: 'http://lan.test/' }))).toThrow('push.subject')
-    expect(() => apply(host().ctx, config({ channels: ['push'], linkBase: '', push: { ...config().push, subject: 'nobody@example.com' } }))).toThrow('push.subject')
+    expect(() =>{  apply(host().ctx, config({ channels: ['push'], linkBase: 'http://lan.test/' })) }).toThrow('push.subject')
+    expect(() =>{  apply(host().ctx, config({ channels: ['push'], linkBase: '', push: { ...config().push, subject: 'nobody@example.com' } })) }).toThrow('push.subject')
   })
 
   it('takes the VAPID subject from an https linkBase', () => {
-    expect(() => apply(host().ctx, config({ channels: ['push'] }))).not.toThrow()
+    expect(() =>{  apply(host().ctx, config({ channels: ['push'] })) }).not.toThrow()
   })
 })
 
@@ -113,7 +113,7 @@ describe('vesta-notify delivery', () => {
   it('sends Telegram only, and only while away, on the default channel list', async () => {
     const calls: string[] = []
     globalThis.fetch = ((url: string) => {
-      calls.push(String(url))
+      calls.push(url)
       return Promise.resolve(Response.json({ result: {} }))
     }) as unknown as typeof fetch
     const { ctx, listeners, routes } = host()
@@ -133,7 +133,7 @@ describe('vesta-notify delivery', () => {
   it('pushes to a subscribed device and skips Telegram when only push is configured', async () => {
     const calls: string[] = []
     globalThis.fetch = ((url: string) => {
-      calls.push(String(url))
+      calls.push(url)
       return Promise.resolve(new Response(null, { status: 201 }))
     }) as unknown as typeof fetch
     const { ctx, listeners, routes } = host()
@@ -157,8 +157,8 @@ describe('vesta-notify delivery', () => {
   it('does not suppress push because of Telegram failures, and reports them', async () => {
     const calls: string[] = []
     globalThis.fetch = ((url: string) => {
-      calls.push(String(url))
-      return String(url).includes('7335')
+      calls.push(url)
+      return url.includes('7335')
         ? Promise.resolve(new Response('no', { status: 500 }))
         : Promise.resolve(new Response(null, { status: 201 }))
     }) as unknown as typeof fetch

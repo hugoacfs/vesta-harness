@@ -202,7 +202,8 @@ export async function enable(env: PushEnv): Promise<PushState> {
 /**
  * Turn alerts off for this device.
  * @param env - the page's capabilities.
- * @returns `off`. The Host is told first, but a failure there never blocks the local unsubscribe: a dead endpoint is dropped at the next push.
+ * @returns `off`. The Host is told first, but a failure there never blocks the local unsubscribe:
+ *   a dead endpoint is dropped at the next push.
  */
 export async function disable(env: PushEnv): Promise<PushState> {
   const registration = await env.serviceWorker?.getRegistration(scopeOf(env.base))

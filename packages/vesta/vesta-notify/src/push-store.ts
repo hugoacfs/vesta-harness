@@ -131,7 +131,7 @@ export class PushStore {
    * @param subscription - a validated subscription.
    */
   add(subscription: PushSubscriptionRecord): Promise<void> {
-    return this.change(current => {
+    return this.change((current) => {
       const others = current.subscriptions.filter(existing => existing.endpoint !== subscription.endpoint)
       return { ...current, subscriptions: [...others, subscription].slice(-MAX_SUBSCRIPTIONS) }
     })

@@ -29,16 +29,16 @@ function fakeWorker(config: { badging?: 'works' | 'absent' | 'throws'; windows?:
     navigator: badging === 'absent'
       ? {}
       : {
-          setAppBadge(count: number) {
-            if (badging === 'throws') return Promise.reject(new Error('refused'))
-            badge.push(count)
-            return Promise.resolve()
-          },
-          clearAppBadge() {
-            badge.push('clear')
-            return Promise.resolve()
-          },
+        setAppBadge(count: number) {
+          if (badging === 'throws') return Promise.reject(new Error('refused'))
+          badge.push(count)
+          return Promise.resolve()
         },
+        clearAppBadge() {
+          badge.push('clear')
+          return Promise.resolve()
+        },
+      },
     clients: {
       claim() {
         flags.claimed = true
@@ -134,7 +134,7 @@ describe('vesta service worker', () => {
   })
 
   it('focuses a window that is already open instead of opening a second one', async () => {
-    const existing: FakeClient = { url: `${SCOPE}`, focused: false }
+    const existing: FakeClient = { url: SCOPE, focused: false }
     existing.focus = () => {
       existing.focused = true
       return Promise.resolve()

@@ -73,33 +73,37 @@ function fake(options: {
         return Promise.resolve(Response.json(server === 'disabled' ? { enabled: false } : { enabled: true, publicKey: KEY }))
       }
       calls.push(`post ${input.slice(BASE.length)}`)
-      posts.push({ url: input, body: JSON.parse(String(init?.body)) as unknown, credentials: init?.credentials })
+      const raw = init?.body
+      posts.push({ url: input, body: JSON.parse(typeof raw === 'string' ? raw : '{}') as unknown, credentials: init?.credentials })
       const answer = options.subscribeResponse ?? { status: 200 }
-      return Promise.resolve(answer.body === undefined ? new Response(null, { status: answer.status }) : Response.json(answer.body, { status: answer.status }))
+      const response = answer.body === undefined
+        ? new Response(null, { status: answer.status })
+        : Response.json(answer.body, { status: answer.status })
+      return Promise.resolve(response)
     },
     serviceWorker: options.supported === false
       ? undefined
       : {
-          register: (script, registerOptions) => {
-            calls.push(`register ${script} ${registerOptions.scope}`)
-            return Promise.resolve(registration)
-          },
-          getRegistration: () => Promise.resolve(options.hasRegistration === false ? undefined : registration),
-          // A getter, so 'ready' is logged when the flow actually waits for the worker.
-          get ready() {
-            calls.push('ready')
-            return Promise.resolve(registration)
-          },
+        register: (script, registerOptions) => {
+          calls.push(`register ${script} ${registerOptions.scope}`)
+          return Promise.resolve(registration)
         },
+        getRegistration: () => Promise.resolve(options.hasRegistration === false ? undefined : registration),
+        // A getter, so 'ready' is logged when the flow actually waits for the worker.
+        get ready() {
+          calls.push('ready')
+          return Promise.resolve(registration)
+        },
+      },
     notification: options.supported === false
       ? undefined
       : {
-          permission: options.permission ?? 'default',
-          requestPermission: () => {
-            calls.push('requestPermission')
-            return Promise.resolve(options.requested ?? 'granted')
-          },
+        permission: options.permission ?? 'default',
+        requestPermission: () => {
+          calls.push('requestPermission')
+          return Promise.resolve(options.requested ?? 'granted')
         },
+      },
     pushManager: options.supported !== false,
     standalone: options.standalone ?? true,
     ios: options.ios ?? false,

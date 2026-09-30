@@ -189,7 +189,8 @@ describe('parseSubscription', () => {
 describe('sendPush', () => {
   const vapid = generateVapidKeys()
 
-  function run(status: number): Promise<{ outcome: string; request: { url: string; init: RequestInit }; receiver: ReturnType<typeof newReceiver> }> {
+  type Run = { outcome: string; request: { url: string; init: RequestInit }; receiver: ReturnType<typeof newReceiver> }
+  function run(status: number): Promise<Run> {
     const receiver = newReceiver()
     let captured: { url: string; init: RequestInit } | undefined
     const transport = ((url: string, init: RequestInit) => {

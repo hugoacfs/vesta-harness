@@ -58,7 +58,7 @@ export function VestaNotifyToggle({ wide, t }: VestaNotifyToggleProps) {
     let live = true
     const refresh = () => {
       readState(env).then(
-        next => { if (live) setState(next) },
+        (next) => { if (live) setState(next) },
         () => { if (live) setState('unavailable') },
       )
     }
@@ -84,7 +84,7 @@ export function VestaNotifyToggle({ wide, t }: VestaNotifyToggleProps) {
     // enable() asks for permission as its first step, so it must be called directly from the tap.
     const run = state === 'on' ? disable(env) : enable(env)
     run.then(
-      next => { setState(next) },
+      (next) => { setState(next) },
       (error: unknown) => {
         setFailure(error instanceof Error ? error.message : String(error))
         return readState(env).then(setState, () => undefined)

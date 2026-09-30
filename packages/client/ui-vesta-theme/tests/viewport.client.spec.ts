@@ -44,16 +44,16 @@ function fakePage(options: FakeOptions = {}) {
   const host: ViewportHost = {
     visualViewport: viewportKind === 'present'
       ? {
-          get height() { return visual.height },
-          get scale() { return visual.scale },
-          get offsetTop() { return visual.offsetTop },
-          addEventListener(type, listener) {
-            listeners.set(type, (listeners.get(type) ?? new Set()).add(listener))
-          },
-          removeEventListener(type, listener) {
-            listeners.get(type)?.delete(listener)
-          },
-        }
+        get height() { return visual.height },
+        get scale() { return visual.scale },
+        get offsetTop() { return visual.offsetTop },
+        addEventListener(type, listener) {
+          listeners.set(type, (listeners.get(type) ?? new Set()).add(listener))
+        },
+        removeEventListener(type, listener) {
+          listeners.get(type)?.delete(listener)
+        },
+      }
       : viewportKind === 'null' ? null : undefined,
     root: {
       style: {
@@ -61,7 +61,7 @@ function fakePage(options: FakeOptions = {}) {
         removeProperty: name => properties.delete(name),
       },
       setAttribute: (name, value) => { attributes.set(name, value) },
-      removeAttribute: name => { attributes.delete(name) },
+      removeAttribute: (name) => { attributes.delete(name) },
     },
     innerHeight: options.innerHeight ?? 800,
     get scrollY() { return state.scrollY },
