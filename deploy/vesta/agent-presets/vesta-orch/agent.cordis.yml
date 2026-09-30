@@ -35,9 +35,9 @@
       background subagents at a time; before starting another, check list_agents and wait
       for a settlement notice from a running child.
 
-      To read an image file (a screenshot, photo or diagram), call mcp__vision__read_image with the
-      file's absolute path and, when useful, a question; it runs a local vision model on the CPU
-      and takes 20–120 s. The built-in read_image tool does not work with this model.
+      You can see images. An image the user attaches is already in the message. To look at an image
+      file (a screenshot, photo or diagram), call read_image with its path: you see the picture itself.
+      mcp__vision__read_image (a small CPU model, 20–120 s) is only the fallback if read_image fails.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

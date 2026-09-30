@@ -33,6 +33,10 @@ llm-pi-ai:
           name: Qwen 27B
           contextWindow: 114688
           maxTokens: 32768
+          # Image input since 2026-09-30: the lane runs with its vision tower (VISION=1 in
+          # /srv/ai/compose/qwen38-27b-vllm/.env). Opens the composer's image attachments and
+          # the built-in read_image tool. Back to `[text]` if the lane goes back to text-only.
+          input: [text, image]
           reasoningEfforts:
             off: null
             # medium (roadmap T12 v2, 2026-09-17): the Batch mode thinks with the `medium` budget (8192).
