@@ -1,5 +1,5 @@
 /* Vesta Harness global sheet: self-hosted fonts, the ambient ground and the
-   phone shell (safe areas, on-screen keyboard). Colors live in the token layer
+   phone shell (safe areas, on-screen keyboard, touch behaviour). Colors live in the token layer
    (tokens.ts); this sheet carries only what a token cannot express. Font files are served from /vesta/fonts by the web
    client's static dist server (apps/web/public/vesta/fonts, SIL OFL 1.1). */
 
@@ -95,4 +95,40 @@ html[data-vesta-keyboard] {
 
 html[data-vesta-keyboard] body {
   padding-bottom: 0;
+}
+
+/* Touch behaviour. None of this changes a mouse-and-keyboard browser.
+   - touch-action: manipulation keeps pan and pinch-zoom but drops the
+     double-tap-to-zoom gesture (and its tap delay), so two quick taps on a
+     control are two taps. It is set on the root because the gesture is decided
+     there: the effective value is the intersection along the touched element's
+     ancestors.
+   - overscroll-behavior: none stops the whole page rubber-banding in the
+     installed app; scrollable regions inside keep their own scrolling.
+   - -webkit-text-size-adjust: 100% stops iOS inflating text after a rotation.
+   - The tap highlight is off: the app draws its own hover and pressed states
+     (a tap latches :hover on touch), and the grey flash reads as a web page. */
+html {
+  touch-action: manipulation;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS zooms the page when a field with a computed font size under 16px is
+   focused, and does not zoom back out. On a touch screen every editable field
+   is therefore at least 16px, and otherwise keeps the size it inherits (the
+   composer follows the Settings font-size preference, 14px by default).
+   :root ahead of :is() lifts the rule above the components' single-class
+   font-size declarations without !important; an inline style still wins. */
+@media (pointer: coarse) {
+  :root :is(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit'], [type='reset'], [type='file'], [type='color'], [type='image'], [type='hidden']),
+    textarea,
+    select,
+    [contenteditable]:not([contenteditable='false'])
+  ) {
+    font-size: max(16px, 1em);
+  }
 }
