@@ -1,5 +1,5 @@
 // Phone audit (proposal branch pwa-proposal-sonnet): the harness at an iPhone-sized, touch-emulated Chrome.
-// NOT YET RUN: written without access to the live harness or a browser. Expect to fix selectors on the first run.
+// First run 2026-09-30 against staging (the navigation wait was the one fix needed).
 //
 //   cd deploy/vesta/verify/ffdrive && npm install
 //   node phone-audit.mjs                    # staging
@@ -52,7 +52,9 @@ try {
     console.log(`note safe-area override unavailable (${String(e.message).slice(0, 80)}); padding not checked`);
   }
 
-  await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
+  // 'load', not 'networkidle0': the app keeps a live connection open, so Chrome never reports an idle network.
+  await page.goto(url, { waitUntil: 'load', timeout: 90000 });
+  await sleep(4000);
   await page.evaluate(() => {
     const d = document.querySelector('[role="dialog"]');
     const b = d && [...d.querySelectorAll('button')].find(x => /continue/i.test(x.textContent));
