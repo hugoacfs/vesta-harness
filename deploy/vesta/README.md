@@ -261,6 +261,50 @@ Upstream keeps every settings scope process-local for a browser whose hostname i
 
 Since 2026-09-11 the call bar wraps onto two rows below 480 px (device name and mic meter hidden, errors still shown), and the app installs as a PWA under the sub-path: the manifest's `start_url`/`scope`/`id` are `./` (resolved against `/harness/manifest.webmanifest`), display `standalone`, ember colours, SVG + PNG icons (`apple-touch-icon.png` 180 px, `icon-512.png` 512 px maskable, rendered from `favicon.svg`; regenerate with a 512 px screenshot of the SVG on `#07080c` if the emblem changes). `index.html` carries `theme-color` and the iOS `apple-mobile-web-app-*` tags. Verify: `curl -b <jar> https://vesta.tail22b555.ts.net/harness/manifest.webmanifest` shows `./` fields and three icons; the PNGs answer `image/png`. On the phone: open the `vesta-url` link once in the browser (the cookie persists), then “Add to Home Screen”; the installed app must open the harness, not the landing page, and the mic button must prompt for the microphone.
 
+## Phone app (PWA): hardening proposal (2026-09-30, branch `pwa-proposal-sonnet`)
+
+**Proposal, not reviewed, not merged, not deployed. Nothing in it has run on a phone.** Decision D22 in [`VESTA.md`](../../VESTA.md) has the reasoning; this section is what to do with the branch.
+
+What it changes, by layer:
+
+| Layer | Change | Where |
+|---|---|---|
+| Shell | `viewport-fit=cover`; `body` padded by `env(safe-area-inset-*)` (0 on desktop); while a phone keyboard is open the page is sized to the visual viewport | `apps/web/index.html`, `ui-vesta-theme` (`vesta.css`, `client/viewport.ts`) |
+| Touch | no double-tap zoom, no whole-page rubber-band, no text inflation, no tap highlight; editable fields are at least 16px on a coarse pointer (iOS zooms on focus below that) | `ui-vesta-theme/src/styles/vesta.css` |
+| Connection | a tab resumed from the background replaces a dead or backing-off connection (`connection.reconnect()`), and a socket that still reads `connected` after 15 s or more hidden | `ui-vesta-presence/src/client/resume.ts` |
+| Alerts | Web Push as a second `vesta-notify` channel; `apps/web/public/sw.js` (push and notification click only, no fetch handler); a bell toggle under the `Vesta home` link | `vesta-notify`, `apps/web/public/sw.js`, `ui-vesta-brand` |
+
+**Turning Web Push on, or merging it dark.** The bundle row in `packages/bundle/vesta-app/cordis.patch.yml` now says `channels: [telegram, push]`, so after a merge the next restart of an instance enables the push routes and shows the bell (nothing is sent until a device subscribes). To merge the code without enabling it, change that line back to `channels: [telegram]`; the routes then answer 404 and the bell never appears. A restart aborts running turns: check `session/list` first, as for any bundle change. **Staging** has the whole notifier row disabled (`staging-cordis.patch.yml`, Pipeline S) and no Telegram tool, so to try push there restate the row with its full config (a patch replaces it): `disabled: false` (or drop it), `linkBase: https://vesta.tail22b555.ts.net/harness-staging/`, `channels: [push]`, `excludePresets: [vesta-incognito, vesta-routine]`, and optionally the short thresholds from that file's comment. Staging keeps its own store (`~/.vesta-harness-staging/vesta-push.json`) and its own service-worker scope (`/harness-staging/`).
+
+**What leaves the box.** Each push goes to the push service behind the phone's subscription (Apple for an iPhone, Google for Chrome and Android, Mozilla, Windows). The message is encrypted for that one browser (RFC 8291), so the service sees the endpoint, the size and the timing, not the text. The VAPID token that authenticates the harness carries a `sub` claim, which is the https `linkBase` (`https://vesta.tail22b555.ts.net/harness/`, so the tailnet host name is visible to the push service); the text itself is a title, at most 240 characters of body and the link. `$DSH_HOME/vesta-push.json` (0600) holds the VAPID private key and the subscriptions, which are bearer capabilities to push to those phones: do not print it, copy it or commit it; deleting it drops every subscription.
+
+**Checks that need no phone** (run on vesta after a deploy, with a cookie jar from `vesta-url`):
+
+```bash
+curl -sS -b /tmp/jar-staging.txt https://vesta.tail22b555.ts.net/harness-staging/api/vesta/notify/push/key   # {"enabled":true,"publicKey":"…"}; 404 while the channel is off
+curl -sSI -b /tmp/jar-staging.txt https://vesta.tail22b555.ts.net/harness-staging/sw.js | head -3             # 200 and a JavaScript type
+stat -c '%a %s' ~/.vesta-harness-staging/vesta-push.json                                                      # 600, non-empty (never cat it)
+python3 -c "import json;print(len(json.load(open('/home/hugo/.vesta-harness-staging/vesta-push.json'))['subscriptions']),'devices')"
+cd ~/code/vesta-harness/deploy/vesta/verify/ffdrive && node phone-audit.mjs     # iPhone-sized touch emulation in Chrome; written without a browser, not yet run
+```
+
+Then, before or after merging: `pnpm install && pnpm typecheck && pnpm test` (the repo's own gates were not run where this was written, and `pnpm-lock.yaml` was edited by hand for two importers; `pnpm install` must leave it unchanged).
+
+### Phone checklist
+
+Do it on an iPhone on iOS 16.4 or later from the installed Home Screen app, against staging first; repeat the starred items in a Safari tab and on an Android Chrome install if one is at hand.
+
+1. **Install.** Open the `vesta-url` link in Safari, Share, Add to Home Screen. Open the app from the icon. *Is it signed in, or does it ask for the token again?* Write down which: the installed app's storage may not be Safari's (documented up to iOS 17, unverified on current iOS) and the answer decides whether the auth pairing step (workstream 4 of the proposal) is needed.
+2. **Safe areas.** The header sits below the notch and status bar, the composer above the home indicator, nothing is cut at the sides in landscape. The status-bar text is white (`black-translucent`), so the dark palette is the one that reads.
+3. **Keyboard.** Tap the composer: the header stays on screen, the composer sits on the keyboard, the page does not zoom. Dismiss the keyboard: the layout returns without a jump. Type a long message, then rotate the phone with the keyboard open. On an iPad with a hardware keyboard nothing should change.
+4. **Zoom.** Focus any other field (Settings, a rename) and confirm no zoom. Pinch-zoom still works. Double-tap on a control is two taps, not a zoom.
+5. **Resume.** Start a turn, leave the app for 30 s or more (lock the phone), come back: the transcript catches up without a manual reload and the state is `connected`. Repeat after one minute and after five, and once with Wi-Fi switched off then on while away.
+6. **Alerts.** Tap the bell: the system permission prompt appears, the row reads `Alerts on`. Start a turn that runs longer than two minutes, lock the phone, expect a banner that opens the app on tap. Check the icon badge count (best-effort), that a banner does not appear while the app is in front, and that the bell reads `Alerts blocked in Settings` after refusing in the prompt and `Add to Home Screen for alerts` in a Safari tab.
+7. **Turning it off and dead devices.** Toggle the bell off and confirm the device count in the store drops. Delete the Home Screen app, run another long turn: the push service answers 404 or 410 and the device is dropped.
+8. **Rough edges to look at:** fixed-position overlays (dialogs, menus, toasts) under the notch or home indicator, which ignore the body padding; targets smaller than 44 px (`phone-audit.mjs` lists them); the hero screen and the sidebar rail at 390 px wide.
+
+Rollback: set `channels` back to `[telegram]` (the bell disappears, nothing is sent; phones keep an inert service worker that only handles push). Reverting the branch removes the code; a registered worker left on a phone is harmless without a `fetch` handler.
+
 ## CLI smoke check (no browser)
 
 `profiles/vesta-headless` stacks the same layers without the web server, so a one-shot run proves the model route, credentials, preset, and MCP tools from a shell:
