@@ -19,7 +19,9 @@
  * that mode's tier and reasoning; a `/mode` typed before the first message wins
  * over the classifier, and a failed classification lands on `auto.fallback`.
  */
+import { readFileSync } from 'node:fs'
 import { readFile, stat, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -108,6 +110,12 @@ export interface Config {
   depth: DepthConfig
   /** The shared working rules rendered right after every persona (engine-fit E1); empty renders nothing. @default '' */
   core: string
+  /**
+   * A file whose text is rendered for every mode as its own section, after the persona and before
+   * the working rules: e.g. a short card about the user kept outside this repo. `~/` is the home
+   * directory; empty renders nothing; read once at start (restart to refresh). @default ''
+   */
+  aboutFile: string
 }
 
 const DEFAULT_DEPTH: DepthConfig = { enabled: true, quick: 'medium', presets: ['vesta-ops', 'vesta-build', 'vesta-research'] }
@@ -155,9 +163,12 @@ export const Config: z<Config> = z.object({
     presets: z.array(z.string()).default(DEFAULT_DEPTH.presets),
   }).default(DEFAULT_DEPTH),
   core: z.string().default(''),
+  aboutFile: z.string().default(''),
 })
 
 const RETRY_DELAY_MS = 400
+/** The about card is a short card, not a document: anything longer is cut. */
+const ABOUT_MAX_CHARS = 4000
 const RETRIES = 4
 /** Right after the deployment persona prefix (order 0). */
 const OVERRIDE_SECTION_ORDER = 1
@@ -287,6 +298,17 @@ export function apply(ctx: Context, config: Config): void {
     const override = overrides.get(session.id)
     if (override !== undefined) void prepareSection(session.id, override)
   }), 'vesta-modes: apply at session start')
+
+  // The about card (2026-10-01): text kept outside the repo, rendered in every mode before the working rules.
+  if (config.aboutFile.trim() !== '') {
+    const aboutPath = config.aboutFile.trim().replace(/^~(?=\/)/, homedir())
+    try {
+      const text = readFileSync(aboutPath, 'utf8').trim().slice(0, ABOUT_MAX_CHARS)
+      if (text !== '') ctx.effect(() => ctx.systemPrompt.section({ name: 'vesta:about', order: 0.4, text }), 'vesta-modes: about section')
+    } catch (error) {
+      ctx.logger.warn(`vesta-modes: aboutFile ${aboutPath} not read: ${String(error)}`)
+    }
+  }
 
   // The shared working rules, right after every persona prefix (engine-fit E1): one voice in every mode.
   if (config.core.trim() !== '') {
