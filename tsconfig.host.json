@@ -345,6 +345,7 @@
     { "path": "./packages/bundle/web-app" },
     { "path": "./packages/bundle/vesta-app" },
     { "path": "./packages/vesta/vesta-notify" },
+    { "path": "./packages/vesta/vesta-login" },
     { "path": "./packages/vesta/vesta-sessions" },
     { "path": "./packages/vesta/vesta-modes" },
     { "path": "./packages/vesta/vesta-incognito" },

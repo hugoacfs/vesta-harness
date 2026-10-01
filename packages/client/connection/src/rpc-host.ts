@@ -15,6 +15,7 @@ import type { BrowserAuth } from './browser-auth.ts'
 import type {
   ConnectionIndexRequest,
   ConnectionIndexResponse,
+  UnauthorizedResponder,
   ConnectionFetchRoute,
   ConnectionFetchHandler,
   HostConnectionFetch,
@@ -102,6 +103,16 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /** Authenticate an index request through the process-token exchange or cookie. */
   authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
     return this.browserAuth.authorizeIndex(request, response)
+  }
+
+  /** Fork hook (vesta-login): mint a browser session for a request proved by another login flow. */
+  issueBrowserSession(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
+    return this.browserAuth.issueSession(request, response)
+  }
+
+  /** Fork hook (vesta-login): own the response to an unauthenticated index request. */
+  setUnauthorizedResponder(responder: UnauthorizedResponder | undefined): void {
+    this.browserAuth.setUnauthorizedResponder(responder)
   }
 
   /** Add this process's launch token to the clean application URL. */

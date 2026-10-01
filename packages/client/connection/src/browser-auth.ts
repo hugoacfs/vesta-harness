@@ -7,6 +7,7 @@ import type {
   ConnectionIndexRequest,
   ConnectionIndexResponse,
   ConnectionTrustRequest,
+  UnauthorizedResponder,
 } from './rpc.ts'
 
 const AUTH_RECORD_KEY = credentialKey('client-connection', 'browser-session')
@@ -116,8 +117,10 @@ function tokenMatches(actual: string, expected: string): boolean {
   return actualBytes.byteLength === expectedBytes.byteLength && timingSafeEqual(actualBytes, expectedBytes)
 }
 
+// Fork (vesta): the name and the path carry the mount path, so two harnesses on one host
+// (`/harness/`, `/harness-staging/`) keep separate sessions instead of overwriting each other's.
 function cookieName(authority: string): string {
-  return COOKIE_PREFIX + encodeBase64Url(createHash('sha256').update(authority).digest())
+  return COOKIE_PREFIX + encodeBase64Url(createHash('sha256').update(`${authority} ${authMountPath()}`).digest())
 }
 
 /** Read the exact generated cookie without implementing general Cookie decoding. */
@@ -132,7 +135,7 @@ function cookieValue(headerValue: string, name: string): string | undefined {
 
 /** Serialize the fixed browser-session attributes; generated names and values are cookie-safe base64url. */
 function sessionCookie(name: string, value: string, expiresAt: number, maxAgeSeconds: number): string {
-  return `${name}=${value}; Max-Age=${String(maxAgeSeconds)}; Path=/; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; SameSite=Strict`
+  return `${name}=${value}; Max-Age=${String(maxAgeSeconds)}; Path=${authMountPath()}; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; SameSite=Strict`
 }
 
 function signature(secret: Buffer, body: string): Buffer {
@@ -196,6 +199,7 @@ async function initializeSecret(credentials: CredentialProvider): Promise<Buffer
  * and retains it for synchronous request authentication.
  */
 export class BrowserAuth {
+  private unauthorizedResponder: UnauthorizedResponder | undefined
   private readonly launchToken: string
   private readonly maxAgeMilliseconds: number
 
@@ -258,23 +262,7 @@ export class BrowserAuth {
       const authority = requestAuthority(req.headers)
       if (req.method === 'GET' && url.pathname === '/' && tokens.length === 1
         && authority !== undefined && tokenMatches(tokens.join(''), this.launchToken)) {
-        const issuedAt = Date.now()
-        const expiresAt = issuedAt + this.maxAgeMilliseconds
-        const value = encodeCookie({
-          version: COOKIE_PAYLOAD_VERSION,
-          authority,
-          issuedAt,
-          expiresAt,
-        }, this.secret)
-        res.writeHead(303, {
-          'cache-control': 'no-store',
-          'location': authMountPath(),
-          'referrer-policy': 'no-referrer',
-          'set-cookie': sessionCookie(
-            cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1000),
-          ),
-        })
-        res.end()
+        this.issueSession(req, res)
         return false
       }
       if (req.method === 'GET' && url.pathname === '/' && this.isAuthenticated(req)) {
@@ -292,6 +280,45 @@ export class BrowserAuth {
     if (this.isAuthenticated(req)) return true
     this.writeUnauthorized(req, res)
     return false
+  }
+
+  /**
+   * Fork hook (vesta-login): mint a browser session for a request another login
+   * flow has proved, and redirect to the mount path, exactly as the token exchange does.
+   * @param req - the request; its Host becomes the cookie's authority.
+   * @param res - response owned when this method returns true.
+   * @returns true when the cookie and redirect were written; false when the request carries no Host.
+   */
+  issueSession(req: ConnectionIndexRequest, res: ConnectionIndexResponse): boolean {
+    const authority = requestAuthority(req.headers)
+    if (authority === undefined) return false
+    const issuedAt = Date.now()
+    const expiresAt = issuedAt + this.maxAgeMilliseconds
+    const value = encodeCookie({
+      version: COOKIE_PAYLOAD_VERSION,
+      authority,
+      issuedAt,
+      expiresAt,
+    }, this.secret)
+    res.writeHead(303, {
+      'cache-control': 'no-store',
+      'location': authMountPath(),
+      'referrer-policy': 'no-referrer',
+      'set-cookie': sessionCookie(
+        cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1000),
+      ),
+    })
+    res.end()
+    return true
+  }
+
+  /**
+   * Fork hook (vesta-login): let a login flow own the response to an unauthenticated
+   * index request (a login page or a redirect to one) instead of the bare 401.
+   * @param responder - returns true when it wrote the response; undefined restores the 401.
+   */
+  setUnauthorizedResponder(responder: UnauthorizedResponder | undefined): void {
+    this.unauthorizedResponder = responder
   }
 
   /**
@@ -315,6 +342,7 @@ export class BrowserAuth {
   }
 
   private writeUnauthorized(req: ConnectionIndexRequest, res: ConnectionIndexResponse): void {
+    if (this.unauthorizedResponder?.(req, res) === true) return
     res.writeHead(401, {
       'cache-control': 'no-store',
       'content-type': 'text/plain; charset=utf-8',

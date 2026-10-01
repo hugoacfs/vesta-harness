@@ -2109,6 +2109,9 @@ importers:
       '@deepseek-ai/dsh-vesta-incognito':
         specifier: workspace:^
         version: link:../../vesta/vesta-incognito
+      '@deepseek-ai/dsh-vesta-login':
+        specifier: workspace:^
+        version: link:../../vesta/vesta-login
       '@deepseek-ai/dsh-vesta-memory-notes':
         specifier: workspace:^
         version: link:../../vesta/vesta-memory-notes
@@ -12178,6 +12181,16 @@ importers:
       '@deepseek-ai/dsh-workspace':
         specifier: workspace:^
         version: link:../../workspace/workspace
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
+  packages/vesta/vesta-login:
+    dependencies:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery

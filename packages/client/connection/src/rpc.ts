@@ -96,6 +96,12 @@ export interface ConnectionIndexResponse {
   end(body?: string): unknown
 }
 
+/**
+ * Fork hook (vesta-login): owns the response to an unauthenticated index request,
+ * returning true when it wrote one; false falls back to the plain 401.
+ */
+export type UnauthorizedResponder = (request: ConnectionIndexRequest, response: ConnectionIndexResponse) => boolean
+
 /** Handler invoked after Connection has decoded the transport envelope. */
 export type ConnectionRpcHandler = (
   endpoint: string,
@@ -190,6 +196,20 @@ export interface HostConnectionHandle {
    * @returns true only when the frontend may serve index.html.
    */
   authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
+
+  /**
+   * Fork hook (vesta-login): mint a browser session for a request another login flow has proved.
+   * @param request - the request whose Host becomes the cookie's authority.
+   * @param response - response owned when the result is true.
+   * @returns true when the cookie and the redirect to the mount path were written.
+   */
+  issueBrowserSession(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
+
+  /**
+   * Fork hook (vesta-login): own the response to an unauthenticated index request.
+   * @param responder - the responder, or undefined to restore the plain 401.
+   */
+  setUnauthorizedResponder(responder: UnauthorizedResponder | undefined): void
 
   /**
    * Add the fresh process token to an ordinary Web application URL.

@@ -67,6 +67,8 @@ The app assumes the site root unless `DSH_BASE_PATH` is set. With it, `frontend-
 
 ## First visit from a browser
 
+**Since 2026-10-01 (D23) a browser signs in with a Telegram code.** A new browser (or one whose seven-day cookie ran out) opening the harness lands on `auth/` under the mount: it must carry your tailnet login (Tailscale Serve stamps `Tailscale-User-Login` on every proxied request; nginx listens only to Serve), it taps *Send me a code on Telegram*, the code arrives through the notifier MCP, and typing it back mints the session cookie for seven days. Codes are bound to the asking browser, live five minutes, allow five tries and are spent on use. The identity list and the label are the `vesta-login` row in the bundle patch (production) and `staging-cordis.patch.yml` (staging, codes say *vesta staging*). The launch-token exchange below keeps working, which is what `vesta-url` and the verify scripts' cookie jars use.
+
 `dsh web` gates the page behind a per-process launch token: the bare URL answers `401 dsh web authentication required` until the browser has opened the tokenized URL once. That exchange sets a signed, host-bound cookie whose signing secret lives in `$DSH_HOME/.credentials.yaml`, so the cookie survives service restarts; only a new browser or device needs the token again.
 
 ```bash

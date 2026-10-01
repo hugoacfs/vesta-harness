@@ -14,6 +14,13 @@
 # The short thresholds mean a phone test needs a 20 s turn, not a two-minute one. A patch
 # replaces the whole config, so linkBase and excludePresets are restated. Back to quiet:
 # `disabled: true` on this row and a restart.
+# Login codes (D23): the same Telegram, the message says staging. A patch replaces the whole
+# config, so the identity list is restated.
+- id: vesta-login
+  config:
+    label: vesta staging
+    identities: [hugoacfs@gmail.com]
+
 - id: vesta-notify
   config:
     linkBase: https://vesta.tail22b555.ts.net/harness-staging/

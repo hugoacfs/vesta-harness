@@ -19,7 +19,10 @@
   inject: [webRuntime]
   config:
     trustedHosts: !!js ctx.webRuntime.trustedHosts
-    cookieMaxAgeDays: 365
+    # Seven days (D23, 2026-10-01): a device signs in with a Telegram code (vesta-login) and
+    # stays signed in a week; the cookie's name and path carry the mount, so production and
+    # staging on one host keep separate sessions.
+    cookieMaxAgeDays: 7
 
 - insert:
     # ── browser: Vesta look ────────────────────────────────────────────────
@@ -40,6 +43,15 @@
     # ── routines: the Routines panel (scheduled agent jobs) ────────────────
     - id: ui-vesta-routines
       name: '@deepseek-ai/dsh-client-ui-vesta-routines'
+
+    # ── login: a Telegram one-time code signs a new device in (D23, 2026-10-01) ─
+    # The login page replaces the launch-token 401; only requests stamped with an
+    # allowed tailnet login by Tailscale Serve may ask for or redeem a code.
+    - id: vesta-login
+      name: '@deepseek-ai/dsh-vesta-login'
+      config:
+        label: vesta
+        identities: [hugoacfs@gmail.com]
 
     # ── notify: Telegram and Web Push pings while no tab is looking ────────
     # Telegram goes through the send-only telegram-notify MCP (ai-telegram-mcp on
