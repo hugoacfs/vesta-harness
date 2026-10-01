@@ -10,8 +10,12 @@
  * state, implementation detail or secrets) as JSON. Each candidate above the
  * confidence floor is checked against the store with `memory_search`: a close
  * existing note is updated by appending, otherwise a new note is written, tagged
- * as auto-captured. Caps per pass, per session and per day bound the noise;
- * every write is logged to `$DSH_HOME/memory-notes.log.jsonl`.
+ * as auto-captured. Writes pass `source: 'auto'` and the session id, which the
+ * store keeps as the note's origin when it creates the note (stores without
+ * those fields ignore them). Note bodies are read from the store's JSON record,
+ * with records nested by capture before 2026-10-01 unwrapped. Caps per pass, per
+ * session and per day bound the noise; every write is logged to
+ * `$DSH_HOME/memory-notes.log.jsonl`.
  *
  * Recall: before every prompt (through the modes plugin's prompt router) the
  * message is searched in the store and the best notes not yet shown to that
@@ -41,6 +45,7 @@ import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import z from '@deepseek-ai/schemastery'
 import { McpClient } from './mcp.ts'
+import { noteBody } from './note-record.ts'
 
 export const name = 'vesta-memory-notes'
 
@@ -248,16 +253,6 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function bodyOf(noteText: string): string {
-  // Strip the frontmatter block the store renders before the body.
-  const trimmed = noteText.trim()
-  if (trimmed.startsWith('---')) {
-    const end = trimmed.indexOf('\n---', 3)
-    if (end !== -1) return trimmed.slice(end + 4).trim()
-  }
-  return trimmed
-}
-
 /**
  * Capture durable notes after idle turns and on close; recall before every prompt.
  * @param ctx - host plugin context.
@@ -419,7 +414,7 @@ export function apply(ctx: Context, config: Config): void {
         let action: 'created' | 'updated'
         if (match !== undefined) {
           noteName = match.name
-          const existing = bodyOf(await readNote(match.name))
+          const existing = noteBody(await readNote(match.name))
           if (overlap(existing, candidate.content) >= 0.7) {
             skipped += 1
             await log({ session: sessionId, preset: state.preset, reason, action: 'skipped', name: match.name, detail: 'nothing new' })
@@ -437,6 +432,8 @@ export function apply(ctx: Context, config: Config): void {
           content,
           scope: match?.scope ?? candidate.scope,
           ...(state.cwd === undefined || candidate.scope !== 'project' ? {} : { project: basename(state.cwd) }),
+          source: 'auto',
+          session: sessionId,
         })
         if (result.isError) {
           await log({ session: sessionId, preset: state.preset, reason, action: 'failed', name: noteName, detail: result.text.slice(0, 200) })
@@ -561,7 +558,7 @@ export function apply(ctx: Context, config: Config): void {
     if (agent === undefined) return
     const lines: string[] = []
     for (const hit of fresh) {
-      const body = bodyOf(await readNote(hit.name)).replace(/\s+/gu, ' ').slice(0, config.recallBodyChars)
+      const body = noteBody(await readNote(hit.name)).replace(/\s+/gu, ' ').slice(0, config.recallBodyChars)
       lines.push(`- ${hit.name}${hit.updated === undefined ? '' : ` (updated ${hit.updated})`}: ${hit.description}${body === '' ? '' : ` — ${body}`}`)
     }
     try {
