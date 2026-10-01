@@ -53,7 +53,11 @@
     "@deepseek-ai/dsh-vesta-routine-tools": "workspace:^",
     "@deepseek-ai/dsh-vesta-routines": "workspace:^",
     "@deepseek-ai/dsh-vesta-sessions": "workspace:^",
-    "@deepseek-ai/dsh-vesta-tool-restrict": "workspace:^"
+    "@deepseek-ai/dsh-vesta-tool-restrict": "workspace:^",
+    "@deepseek-ai/dsh-fs-ssh": "workspace:^",
+    "@deepseek-ai/dsh-sandbox-ssh": "workspace:^",
+    "@deepseek-ai/dsh-ssh": "workspace:^",
+    "@deepseek-ai/dsh-subprocess-ssh": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"

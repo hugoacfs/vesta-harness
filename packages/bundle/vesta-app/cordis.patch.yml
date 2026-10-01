@@ -100,6 +100,7 @@
       config:
         modes:
           vesta-ops: { label: Ops, permission: danger-full-access, reasoning: xhigh }
+          vesta-mac: { label: Mac, permission: danger-full-access, reasoning: xhigh, switchable: false }
           vesta-build: { label: Build, permission: workspace-write, reasoning: xhigh }
           vesta-research: { label: Research, permission: read-only, reasoning: xhigh }
           vesta-companion: { label: Companion, permission: read-only, reasoning: 'off' }

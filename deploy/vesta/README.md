@@ -349,6 +349,18 @@ The attach step puts the migrated sessions into the dsh-chat sidebar group (othe
 
 Forks (headers with `parentSession` + `seedLength`) migrate too, at ~30 s each for a few hundred thousand inherited events, which is why the script pre-migrates instead of leaving it to the web process. rc.7's subagent child sessions (`origin: subagent`, bare-uuid directories) are refused by the current codec ("subagent/descriptor uses unsupported descriptor version 2"); the script removes the failed copy again so the index stays healthy. They never appear in the sidebar; only the parents' subagent detail views lose them. rc.7 had 11 sessions archived (`~/.dsh/storages/workspace.json` → `archivedSessionIds`); the migration leaves everything visible.
 
+## Mac shell and filesystem sessions (staging prototype)
+
+The staging-only Vesta Mac preset runs Bash, filesystem reads and edits, and filesystem search on the signed-in Mac through the POSIX SSH providers. The session's workspace record and Vesta file pane remain on Vesta, so Mac shell calls must pass an absolute Mac workdir and filesystem tools must receive absolute Mac paths. Create a normal staging session and select Vesta Mac; other presets continue using Vesta's local providers. The Mac must be awake and connected to the tailnet.
+
+The first target is the Mac with Tailscale address 100.93.103.19 and account u2370878. Its helper is installed under ~/.vesta-harness-staging/mac-ssh/; Vesta stores a separate private key and pinned host key under the staging Harness home. The Mac setup adds a staging key restricted to Vesta's tailnet address and enables macOS Remote Login if needed. It does not change production files or the Mac's existing Vesta SSH alias.
+
+From the Mac, run this one command to install the helper, add the staging key, enable Remote Login if necessary, and report the Mac host key through the existing authenticated ssh vesta connection:
+
+    ssh vesta 'cat ~/code/vesta-harness-staging/deploy/vesta/mac-ssh-staging-setup.sh' | bash
+
+The script requires Tailscale, Node.js 22.19+ or 24+ with npm, and may ask once for a macOS administrator password. Enabling Remote Login starts macOS's system SSH service; this setup leaves other SSH authentication settings unchanged and restricts the staging key to Vesta's tailnet address. It pins the helper digest and fails closed if the installed helper does not match the staging provider version. The SSH service is shared by Mac sessions and does not reconnect after transport loss; restart staging before using the Mac preset again. The operation result may be unknown and the Harness does not replay it.
+
 ## Staging instance (bleeding edge beside production)
 
 A second Harness runs from its own checkout and home so new work can be tried without touching production:
