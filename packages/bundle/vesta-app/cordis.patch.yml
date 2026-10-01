@@ -125,6 +125,9 @@
           enabled: true
           quick: medium
           presets: [vesta-ops, vesta-build, vesta-research]
+        # The card about Hugo (2026-10-01): written from claude-data, kept on the server outside this repo,
+        # rendered in every mode before the working rules. A missing file only logs a warning.
+        aboutFile: ~/claude-data/vesta/core-card.md
         # The shared working rules (engine-fit E1): one voice in every mode, rendered after each persona.
         core: >-
           Working rules for every mode. Look before you act: read the log, the status or the file before
