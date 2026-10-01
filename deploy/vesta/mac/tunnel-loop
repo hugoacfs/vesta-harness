@@ -1,0 +1,9 @@
+#!/bin/bash
+# Keeps the reverse tunnel to Vesta up while $HOME/.vesta-mac/tunnel.pid exists (started by vesta-mac on).
+D="$HOME/.vesta-mac"
+while [ -f "$D/tunnel.pid" ]; do
+  ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+    -R 127.0.0.1:2222:127.0.0.1:2222 vesta >>"$D/tunnel.log" 2>&1
+  [ -f "$D/tunnel.pid" ] || break
+  sleep 5
+done

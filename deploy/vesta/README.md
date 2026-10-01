@@ -307,6 +307,10 @@ Do it on an iPhone on iOS 16.4 or later from the installed Home Screen app, agai
 
 Rollback: set `channels` back to `[telegram]` (the bell disappears, nothing is sent; phones keep an inert service worker that only handles push). Reverting the branch removes the code; a registered worker left on a phone is harmless without a `fetch` handler.
 
+## The Mac as a tool target (staging)
+
+Since 2026-10-01 (D24) a staging session on the `vesta-mac` preset runs its shell and filesystem tools on Hugo's Mac, through the Mac's own reverse tunnel (`vesta-mac on`), so the employer-managed Mac neither listens on the network nor changes a system setting. Design, setup and checks: [`mac/README.md`](mac/README.md). The earlier draft that enabled Remote Login lives on branch `mac-access-proposal`.
+
 ## CLI smoke check (no browser)
 
 `profiles/vesta-headless` stacks the same layers without the web server, so a one-shot run proves the model route, credentials, preset, and MCP tools from a shell:

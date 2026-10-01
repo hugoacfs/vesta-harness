@@ -1,0 +1,12 @@
+# The Mac as a tool target (D24, 2026-10-01)
+
+Hugo's Mac is managed by his employer and normally refuses SSH, so nothing on it listens on the network and no system setting is touched. The Mac runs, in his own account and only while he wants it:
+
+- a user-level `sshd` on `127.0.0.1:2222` (`/usr/sbin/sshd -f ~/.vesta-mac/sshd_config`): key-only, his account only, no PTY, socket forwarding allowed for the harness's helper;
+- a reverse tunnel to Vesta over his ordinary `ssh vesta` key (`ssh -N -R 127.0.0.1:2222:127.0.0.1:2222 vesta`), kept up by `tunnel-loop`.
+
+`vesta-mac on | off | status` (this directory's `vesta-mac`, linked into `~/.local/bin`) starts and stops both. On Vesta the OpenSSH alias `vesta-mac-staging` points at `127.0.0.1:2222`, the staging key in `~/.vesta-harness-staging/mac-ssh/` and a pinned host key, so the harness's SSH providers (`dsh-ssh`, `fs-ssh`, `subprocess-ssh`, `sandbox-ssh`) reach the Mac without ever crossing the network themselves. The `vesta-mac` preset composes them (`danger-full-access` as his Mac account; the session's working directory stays on Vesta, so paths on the Mac are absolute).
+
+Mac-side one-time setup, as Hugo: `mkdir -p ~/.vesta-mac`, `ssh-keygen -t ed25519 -N '' -f ~/.vesta-mac/host_ed25519`, this `sshd_config.template` as `~/.vesta-mac/sshd_config` with the paths and user filled in, Vesta's staging public key in `~/.vesta-mac/authorized_keys` as `from="127.0.0.1",no-agent-forwarding,no-X11-forwarding,no-pty <key>`, the pinned helper (`npm install --prefix ~/.vesta-harness-staging/mac-ssh --no-save --ignore-scripts @deepseek-ai/dsh-ssh@<staging version>`, hash checked against the preset's `helperHash`, `node` linked beside it). Vesta side: the alias above and `[127.0.0.1]:2222 <Mac host key>` in the alias's `known_hosts`.
+
+Check: `vesta-mac on`, then on Vesta `ssh vesta-mac-staging 'uname -a'`; then `deploy/vesta/verify/mac-verify.sh` runs a staging session on the preset that runs a command and reads a file on the Mac.

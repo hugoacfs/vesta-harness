@@ -1,0 +1,2 @@
+name: Vesta Mac
+description: Use the signed-in Mac's shell and filesystem over staging SSH; the Vesta file pane remains local.

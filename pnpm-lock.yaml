@@ -2070,6 +2070,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-vesta-theme':
         specifier: workspace:^
         version: link:../../client/ui-vesta-theme
+      '@deepseek-ai/dsh-fs-ssh':
+        specifier: workspace:^
+        version: link:../../ssh/fs-ssh
       '@deepseek-ai/dsh-hooks-claude-code':
         specifier: workspace:^
         version: link:../../hooks/hooks-claude-code
@@ -2082,12 +2085,21 @@ importers:
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:^
         version: link:../../mcp/mcp-client
+      '@deepseek-ai/dsh-sandbox-ssh':
+        specifier: workspace:^
+        version: link:../../ssh/sandbox-ssh
       '@deepseek-ai/dsh-schedule':
         specifier: workspace:^
         version: link:../../schedule/schedule
       '@deepseek-ai/dsh-session-title-all-prompts-llm':
         specifier: workspace:^
         version: link:../../session/session-title-all-prompts-llm
+      '@deepseek-ai/dsh-ssh':
+        specifier: workspace:^
+        version: link:../../ssh/ssh
+      '@deepseek-ai/dsh-subprocess-ssh':
+        specifier: workspace:^
+        version: link:../../ssh/subprocess-ssh
       '@deepseek-ai/dsh-terminal':
         specifier: workspace:^
         version: link:../../terminal/terminal

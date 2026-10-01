@@ -1,0 +1,16 @@
+Port 2222
+ListenAddress 127.0.0.1
+HostKey $HOME/.vesta-mac/host_ed25519
+PidFile $HOME/.vesta-mac/sshd.pid
+AuthorizedKeysFile $HOME/.vesta-mac/authorized_keys
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+PermitRootLogin no
+AllowUsers <mac user>
+AllowTcpForwarding yes
+AllowStreamLocalForwarding yes
+StreamLocalBindUnlink yes
+X11Forwarding no
+LogLevel VERBOSE

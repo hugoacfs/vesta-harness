@@ -104,6 +104,8 @@
           vesta-research: { label: Research, permission: read-only, reasoning: xhigh }
           vesta-companion: { label: Companion, permission: read-only, reasoning: 'off' }
           vesta-incognito: { label: Incognito, permission: read-only, reasoning: 'off', switchable: false }
+          # The Mac (D24, 2026-10-01): shell and files on Hugo's Mac through the Mac's own tunnel (vesta-mac on).
+          vesta-mac: { label: Mac, permission: danger-full-access, reasoning: xhigh, switchable: false }
           # Auto (roadmap M5): read-only until the first message is routed to a real mode.
           vesta-auto: { label: Auto, permission: read-only, reasoning: xhigh, switchable: false }
           # Batch (roadmap T12 v2): code mode, never Auto-routed, not a /mode target.
