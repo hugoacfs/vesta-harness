@@ -1,11 +1,16 @@
 #!/bin/bash
 # T13 verification on staging: capture after idle turns, recall before a prompt, dedupe, incognito exclusion, /memory, cleanup.
 # Staging has its own memory server since Pipeline S (2026-09-25; MEM_PORT, default 7339); production's (7332) is never touched.
-# Every test fact is marked t13test and deleted at the end. PRESET picks the mode of sessions A-C (default vesta-ops;
+# Every test fact is marked t13test; at the end the test's writes are undone with git from the store's head at the start
+# (restored when the note existed, removed when the test created it), never by matching names. PRESET picks the mode of sessions A-C (default vesta-ops;
 # vesta-companion runs with reasoning off and spares the model lane).
 set -u
 MEM_PORT=${MEM_PORT:-7339}
 PRESET=${PRESET:-vesta-ops}
+STORE=${STORE:-/srv/ai/memory-staging}         # the staging store's checkout on vesta; the test's writes are undone there with git
+CONTAINER=${CONTAINER:-ai-memory-mcp-staging}  # reindexed after the undo
+[ "$MEM_PORT" = 7332 ] && { echo "refusing: 7332 is production's memory"; exit 1; }
+PRE=$(ssh vesta "git -C $STORE rev-parse --short HEAD")
 S=https://vesta.tail22b555.ts.net/harness-staging
 J=/tmp/jar-staging.txt
 H=/home/hugo/.vesta-harness-staging
@@ -65,13 +70,14 @@ say "$D" "What is 7 + 7? One word."
 sleep 60; echo "  log entries for D (expect none):"; logfor "$D"
 echo; echo "== E. /memory status in B, then cleanup of the test notes"
 rpc commands/execute "{\"agentId\":\"$B\",\"line\":\"/memory\",\"submittedAttachments\":[]}" | python3 -c 'import sys,json;d=json.load(sys.stdin);print("/memory →", str(d.get("result",{}).get("value",{}).get("result",{}).get("text"))[:400])'
-ssh vesta 'init() { curl -s -m 10 -X POST http://127.0.0.1:'"$MEM_PORT"'/mcp -H "content-type: application/json" -H "accept: application/json, text/event-stream" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"probe\",\"version\":\"0\"}}}" -D /tmp/mh.txt -o /dev/null; grep -i "mcp-session-id" /tmp/mh.txt | awk "{print \$2}" | tr -d "\r"; }; sid=$(init); call() { curl -s -m 15 -X POST http://127.0.0.1:'"$MEM_PORT"'/mcp -H "content-type: application/json" -H "accept: application/json, text/event-stream" ${sid:+-H "mcp-session-id: $sid"} -d "$1" | sed "s/^data: //" | grep "^{" | tail -1; }; names=$(call "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"memory_list\",\"arguments\":{}}}" | python3 -c "
-import sys,json
-d=json.load(sys.stdin); t=d.get(\"result\",{}).get(\"content\",[{}])[0].get(\"text\",\"{}\")
-try: notes=json.loads(t).get(\"notes\",[])
-except Exception: notes=[]
-for n in notes:
-    blob=(n.get(\"name\",\"\")+\" \"+n.get(\"description\",\"\")).lower()
-    if \"t13\" in blob or \"bramble\" in blob: print(n[\"name\"])
-"); echo "  test notes in the store: ${names:-none}"; echo "$names" | while read -r n; do [ -z "$n" ] && continue; call "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"memory_delete\",\"arguments\":{\"name\":\"$n\"}}}" | grep -o "\"deleted\": *true" | sed "s/^/  $n /"; done; rm -f /tmp/mh.txt'
+echo "  undoing the test's writes in $STORE since $PRE (notes whose added text carries t13test or bramble):"
+ssh vesta bash -s <<UNDO
+cd $STORE
+git diff --name-only $PRE HEAD -- notes | while read -r f; do
+  if git diff $PRE HEAD -- "\$f" | grep '^+' | grep -qi -E 't13test|bramble'; then
+    if git cat-file -e "$PRE:\$f" 2>/dev/null; then git checkout -q $PRE -- "\$f" && echo "    restored \$f"; else git rm -q "\$f" && echo "    removed \$f"; fi
+  fi
+done
+if git diff --cached --quiet; then echo "    nothing to undo"; else git commit -q -m "memory: undo the T13 test's writes" && docker exec $CONTAINER python reindex.py | tail -1 | sed 's/^/    /'; fi
+UNDO
 echo "== done"
