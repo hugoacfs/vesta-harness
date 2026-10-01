@@ -33,5 +33,6 @@ case "${1:-status}" in
     alive "$SSHD_PID" && s="on"
     pgrep -f 'ssh -N .*tunnel_ed25519' >/dev/null && t=on
     echo "vesta-mac: sshd $s, tunnel to vesta $t" ;;
-  *) echo "usage: vesta-mac on|off|status"; exit 2 ;;
+  menu) open "$HOME/Applications/Vesta Mac.app"; echo "vesta-mac: the menu bar indicator is open" ;;
+  *) echo "usage: vesta-mac on|off|status|menu"; exit 2 ;;
 esac
