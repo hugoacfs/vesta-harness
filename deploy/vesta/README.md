@@ -261,9 +261,9 @@ Upstream keeps every settings scope process-local for a browser whose hostname i
 
 Since 2026-09-11 the call bar wraps onto two rows below 480 px (device name and mic meter hidden, errors still shown), and the app installs as a PWA under the sub-path: the manifest's `start_url`/`scope`/`id` are `./` (resolved against `/harness/manifest.webmanifest`), display `standalone`, ember colours, SVG + PNG icons (`apple-touch-icon.png` 180 px, `icon-512.png` 512 px maskable, rendered from `favicon.svg`; regenerate with a 512 px screenshot of the SVG on `#07080c` if the emblem changes). `index.html` carries `theme-color` and the iOS `apple-mobile-web-app-*` tags. Verify: `curl -b <jar> https://vesta.tail22b555.ts.net/harness/manifest.webmanifest` shows `./` fields and three icons; the PNGs answer `image/png`. On the phone: open the `vesta-url` link once in the browser (the cookie persists), then “Add to Home Screen”; the installed app must open the harness, not the landing page, and the mic button must prompt for the microphone.
 
-## Phone app (PWA): hardening proposal (2026-09-30, branch `pwa-proposal-sonnet`)
+## Phone app (PWA): hardening (D22; staging 2026-09-30, production 2026-10-01)
 
-**Proposal, not reviewed, not merged, not deployed. Nothing in it has run on a phone.** Decision D22 in [`VESTA.md`](../../VESTA.md) has the reasoning; this section is what to do with the branch.
+Written by a Sonnet session on branch `pwa-proposal-sonnet`, reviewed and merged into staging the same night (`11296da69b`), promoted to production on 2026-10-01 after Hugo's phone test on staging (tag `vesta-stable-2026-10-01-pwa`). Decision D22 in [`VESTA.md`](../../VESTA.md) has the reasoning.
 
 What it changes, by layer:
 
@@ -288,7 +288,7 @@ python3 -c "import json;print(len(json.load(open('/home/hugo/.vesta-harness-stag
 cd ~/code/vesta-harness/deploy/vesta/verify/ffdrive && node phone-audit.mjs     # iPhone-sized touch emulation in Chrome; written without a browser, not yet run
 ```
 
-Then, before or after merging: `pnpm install && pnpm typecheck && pnpm test` (the repo's own gates were not run where this was written, and `pnpm-lock.yaml` was edited by hand for two importers; `pnpm install` must leave it unchanged).
+Gates, run on 2026-09-30 before the merge: `pnpm install --frozen-lockfile` accepted the two hand-added lockfile importers; typecheck passed once the three client specs were named `*.client.spec.ts`; oxlint clean after style fixes; the 88 specs green.
 
 ### Phone checklist
 
