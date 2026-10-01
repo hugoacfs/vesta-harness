@@ -496,6 +496,7 @@
       "@deepseek-ai/dsh-vesta-incognito": ["./packages/vesta/vesta-incognito/src"],
       "@deepseek-ai/dsh-vesta-memory-notes": ["./packages/vesta/vesta-memory-notes/src"],
       "@deepseek-ai/dsh-vesta-modes": ["./packages/vesta/vesta-modes/src"],
+      "@deepseek-ai/dsh-vesta-login": ["./packages/vesta/vesta-login/src"],
       "@deepseek-ai/dsh-vesta-notify": ["./packages/vesta/vesta-notify/src"],
       "@deepseek-ai/dsh-vesta-routine-tools": ["./packages/vesta/vesta-routine-tools/src"],
       "@deepseek-ai/dsh-vesta-routines": ["./packages/vesta/vesta-routines/src"],
