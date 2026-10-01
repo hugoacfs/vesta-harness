@@ -19,19 +19,19 @@ case "${1:-status}" in
       nohup bash "$D/tunnel-loop" >/dev/null 2>&1 &
       echo $! > "$TUNNEL_PID"
     fi
-    sleep 3
+    sleep 6
     "$0" status ;;
   off)
     if [ -s "$TUNNEL_PID" ]; then kill "$(cat "$TUNNEL_PID")" 2>/dev/null; fi
     rm -f "$TUNNEL_PID"
-    pkill -f 'ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:2222' 2>/dev/null
+    pkill -f 'ssh -N .*tunnel_ed25519' 2>/dev/null
     alive "$SSHD_PID" && kill "$(cat "$SSHD_PID")"
     sleep 0.5
     echo "vesta-mac: off" ;;
   status)
     s=off; t=off
     alive "$SSHD_PID" && s="on"
-    pgrep -f 'ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:2222' >/dev/null && t=on
+    pgrep -f 'ssh -N .*tunnel_ed25519' >/dev/null && t=on
     echo "vesta-mac: sshd $s, tunnel to vesta $t" ;;
   *) echo "usage: vesta-mac on|off|status"; exit 2 ;;
 esac

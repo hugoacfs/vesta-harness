@@ -1,9 +1,15 @@
 #!/bin/bash
 # Keeps the reverse tunnel to Vesta up while $HOME/.vesta-mac/tunnel.pid exists (started by vesta-mac on).
+# Tailnet only: it leaves through the Mac's Tailscale address, goes to Vesta's Tailscale address, with the
+# dedicated tunnel key, which Vesta accepts only from this Mac's tailnet address and only for this one forward.
 D="$HOME/.vesta-mac"
+MAC_TAILNET_IP=100.93.103.19
+VESTA_TAILNET_IP=100.120.132.105
 while [ -f "$D/tunnel.pid" ]; do
   ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
-    -R 127.0.0.1:2222:127.0.0.1:2222 vesta >>"$D/tunnel.log" 2>&1
+    -o BindAddress="$MAC_TAILNET_IP" -i "$D/tunnel_ed25519" -o IdentitiesOnly=yes \
+    -o UserKnownHostsFile="$D/vesta_known_hosts" -o StrictHostKeyChecking=yes \
+    -R 127.0.0.1:2222:127.0.0.1:2222 "hugo@$VESTA_TAILNET_IP" >>"$D/tunnel.log" 2>&1
   [ -f "$D/tunnel.pid" ] || break
   sleep 5
 done
