@@ -1,5 +1,6 @@
 // Vesta Mac: a menu bar indicator and switch for vesta-mac (the door that lets the Vesta harness
-// use this Mac). Green open lock = on, grey closed lock = off. Polls `vesta-mac status` every 5 s.
+// use this Mac). Reads "Vesta Mac · on" or "· off" in the menu bar's own colour; the menu switches it.
+// Polls `vesta-mac status` every 5 s.
 import AppKit
 
 let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -47,18 +48,17 @@ final class Indicator: NSObject, NSApplicationDelegate {
 
     func show(sshd: Bool, tunnel: Bool) {
         on = sshd && tunnel
-        let half = (sshd || tunnel) && !on
+        // Plain words in the menu bar's own colour (white on a dark bar): no icons, no colours to decode.
+        let word = on ? "on" : (sshd && !tunnel ? "connecting…" : (!sshd && tunnel ? "broken" : "off"))
         if let button = item.button {
-            let symbol = on ? "lock.open.fill" : (half ? "lock.trianglebadge.exclamationmark.fill" : "lock.fill")
-            let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Vesta Mac")
-            image?.isTemplate = true
-            button.image = image
-            button.imagePosition = .imageLeading
-            button.title = on ? " Vesta" : ""
-            button.contentTintColor = on ? .systemGreen : (half ? .systemOrange : .secondaryLabelColor)
-            button.toolTip = on ? "Vesta can use this Mac" : "Vesta cannot use this Mac"
+            button.image = nil
+            button.title = "Vesta Mac · \(word)"
+            button.contentTintColor = nil
+            button.toolTip = on ? "Vesta can use this Mac. Click to turn it off." : "Vesta cannot use this Mac. Click to turn it on."
         }
-        state.title = on ? "Open: Vesta can use this Mac" : (half ? "Half open: sshd \(sshd ? "on" : "off"), tunnel \(tunnel ? "on" : "off")" : "Closed: Vesta cannot use this Mac")
+        state.title = on
+            ? "Vesta can use this Mac (sshd on, tunnel on)"
+            : (sshd || tunnel ? "Half open: sshd \(sshd ? "on" : "off"), tunnel \(tunnel ? "on" : "off"); Turn on repairs it" : "Vesta cannot use this Mac")
         toggle.title = on ? "Turn off" : "Turn on"
         toggle.isEnabled = !busy
     }

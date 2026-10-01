@@ -11,4 +11,4 @@ Mac-side one-time setup, as Hugo: `mkdir -p ~/.vesta-mac`, `ssh-keygen -t ed2551
 
 Check: `vesta-mac on`, then on Vesta `ssh vesta-mac 'uname -a'`; then `deploy/vesta/verify/mac-verify.sh` (staging; `VESTA_TARGET=prod` for production) runs a session on the preset that runs a command and reads a file on the Mac.
 
-The menu bar indicator `Vesta Mac.app` (`indicator/VestaMac.swift`, built with `swiftc -O -swift-version 5 -framework AppKit` into `~/Applications/Vesta Mac.app`, an alias on the Desktop; `vesta-mac menu` opens it) shows a green open lock while the door is open and a grey closed lock otherwise, and switches it from its menu.
+The menu bar indicator `Vesta Mac.app` (`indicator/VestaMac.swift`, built with `swiftc -O -swift-version 5 -framework AppKit` into `~/Applications/Vesta Mac.app`, an alias on the Desktop; `vesta-mac menu` opens it) reads `Vesta Mac · on` or `Vesta Mac · off` in the menu bar's own colour (`connecting…` while the tunnel comes up), and its menu switches the door.
