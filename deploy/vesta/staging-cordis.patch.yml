@@ -19,7 +19,7 @@
 - id: vesta-login
   config:
     label: vesta staging
-    identities: [hugoacfs@gmail.com]
+    identities: [hugoacfs@github]
 
 - id: vesta-notify
   config:

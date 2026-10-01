@@ -51,7 +51,7 @@
       name: '@deepseek-ai/dsh-vesta-login'
       config:
         label: vesta
-        identities: [hugoacfs@gmail.com]
+        identities: [hugoacfs@github]
 
     # ── notify: Telegram and Web Push pings while no tab is looking ────────
     # Telegram goes through the send-only telegram-notify MCP (ai-telegram-mcp on
