@@ -77,6 +77,17 @@
       config:
         exportDir: ~/backups/sessions-deleted
 
+    # ── telemetry (egress appraisal 2026-10-02): nothing leaves for DeepSeek ─
+    # dsh-base loads session-telemetry-otel in FEEDBACK_ONLY mode with its exporter pointed at
+    # DeepSeek's collector (https://harness-telemetry.deepseeksvc.com/v1/logs): a thumbs rating or
+    # /feedback would upload the whole session history. DISABLED is the plugin's own off switch;
+    # feedback stays in the session log and the plugin logs that nothing was uploaded.
+    # The units also set DSH_TELEMETRY_DISABLED=1 (deploy/vesta/*.service) as a second lock.
+    - id: session-telemetry-otel
+      name: '@deepseek-ai/dsh-session-telemetry-otel'
+      config:
+        mode: DISABLED
+
     # ── default model (2026-10-02): the home's settings.yaml rules ─
     # Upstream saves every picker click as the new default, which is how a home drifted to
     # `reasoningEffort: off` on 2026-09-25. `pinned` keeps the pick per Session; the deployed

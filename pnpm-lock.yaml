@@ -2094,6 +2094,9 @@ importers:
       '@deepseek-ai/dsh-schedule':
         specifier: workspace:^
         version: link:../../schedule/schedule
+      '@deepseek-ai/dsh-session-telemetry-otel':
+        specifier: workspace:^
+        version: link:../../session/session-telemetry-otel
       '@deepseek-ai/dsh-session-title-all-prompts-llm':
         specifier: workspace:^
         version: link:../../session/session-title-all-prompts-llm

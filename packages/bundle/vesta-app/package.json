@@ -55,6 +55,7 @@
     "@deepseek-ai/dsh-vesta-sessions": "workspace:^",
     "@deepseek-ai/dsh-vesta-tool-restrict": "workspace:^",
     "@deepseek-ai/dsh-agent-default-model": "workspace:^",
+    "@deepseek-ai/dsh-session-telemetry-otel": "workspace:^",
     "@deepseek-ai/dsh-fs-ssh": "workspace:^",
     "@deepseek-ai/dsh-sandbox-ssh": "workspace:^",
     "@deepseek-ai/dsh-ssh": "workspace:^",
