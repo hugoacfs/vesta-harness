@@ -43,8 +43,12 @@
     sampleOverCapGlobResults: false
 - id: tool-jobs
   name: '@deepseek-ai/dsh-tool-jobs'
+# tool-web deferred 2026-10-02 (P26): its web_search needs dsh-web's search provider, which
+# is DeepSeek's API (no key here, and the egress gate refuses it); 1 call, 1 error in 14 days.
+# The working path is the search MCP (mcp__search__*). Flip `disabled` when a local provider exists.
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
+  disabled: true
   config:
     fetch: false
     searchTimeoutMs: 60000
@@ -57,9 +61,11 @@
   config:
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
+      # Retuned 2026-10-02 (P26) from production logs, same values as every preset:
+      # 0.7 of the window, checkpoints capped at 6144 tokens. Revert: 0.5 / 16384.
       config:
-        thresholdRatio: 0.5
-        maxTokens: 16384
+        thresholdRatio: 0.7
+        maxTokens: 6144
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
     - id: tool-result-pruner

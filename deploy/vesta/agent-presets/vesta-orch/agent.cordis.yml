@@ -147,13 +147,16 @@
   config:
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
-      # Tier-1 context discipline (2026-08-19): compact at 50% of the routed
-      # context window (default is 0.8) so working context stays well under the
-      # gateway cache and long writes keep headroom. retainRatio stays at its
-      # 0.16 default. Revert: remove this config block.
+      # Context discipline, retuned 2026-10-02 from 14 days of production logs
+      # (P26): at 0.5 of the 114k window with 16k-token summaries, compaction
+      # fired every ~3 steps (329 times in 40 sessions), each summary a median
+      # 9.1k tokens — 45% of every completion token the lane produced. 0.7 keeps
+      # 34k of headroom for a full 32k reply; 6144 caps the checkpoint at about
+      # a third of what the model wrote when allowed 16k. retainRatio stays at
+      # its 0.16 default. Revert: thresholdRatio 0.5, maxTokens 16384.
       config:
-        thresholdRatio: 0.5
-        maxTokens: 16384
+        thresholdRatio: 0.7
+        maxTokens: 6144
 
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
@@ -257,8 +260,12 @@
 
 # The `web` service and its search provider stay in the host composition; only
 # the model-facing tool is per-session.
+# tool-web deferred 2026-10-02 (P26): its web_search needs dsh-web's search provider, which
+# is DeepSeek's API (no key here, and the egress gate refuses it); 1 call, 1 error in 14 days.
+# The working path is the search MCP (mcp__search__*). Flip `disabled` when a local provider exists.
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
+  disabled: true
   config:
     fetch: false
     searchTimeoutMs: 60000

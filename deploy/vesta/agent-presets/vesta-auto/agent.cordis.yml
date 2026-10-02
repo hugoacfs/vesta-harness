@@ -131,13 +131,16 @@
   config:
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
-      # Tier-1 context discipline (2026-08-19): compact at 50% of the routed
-      # context window (default is 0.8) so working context stays well under the
-      # gateway cache and long writes keep headroom. retainRatio stays at its
-      # 0.16 default. Revert: remove this config block.
+      # Context discipline, retuned 2026-10-02 from 14 days of production logs
+      # (P26): at 0.5 of the 114k window with 16k-token summaries, compaction
+      # fired every ~3 steps (329 times in 40 sessions), each summary a median
+      # 9.1k tokens — 45% of every completion token the lane produced. 0.7 keeps
+      # 34k of headroom for a full 32k reply; 6144 caps the checkpoint at about
+      # a third of what the model wrote when allowed 16k. retainRatio stays at
+      # its 0.16 default. Revert: thresholdRatio 0.5, maxTokens 16384.
       config:
-        thresholdRatio: 0.5
-        maxTokens: 16384
+        thresholdRatio: 0.7
+        maxTokens: 6144
 
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
