@@ -42,6 +42,7 @@ The composition entry is the base of the default: it requires a provider and mod
 |---|---|---|
 | `provider` | required | Registered provider route for fresh agents |
 | `model` | required | Provider-owned model id for fresh agents |
+| `pinned` | `false` | Vesta fork: when `true`, `saveSelection()` leaves the stored default untouched, so a Session's pick stays with that Session and the deployment's settings keep the default |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-default-model) is the exhaustive source for every accepted field. `reasoningEffort` is deliberately not a config field: it belongs to the settings layer, so a complete saved selection can clear an effort when the next selected model has none, while a composition value would be inherited again.
 
@@ -54,7 +55,7 @@ const selection = ctx.agentDefaultModel.currentSelection()
 await ctx.agentDefaultModel.saveSelection({ provider, model, reasoningEffort: 'high' })
 ```
 
-Without a settings provider, `saveSelection()` is a no-op and the composition entry remains current. The service does not validate catalog membership: a provider route may serve an unadvertised model, and the consumer that opens a model request owns availability diagnostics.
+Without a settings provider, `saveSelection()` is a no-op and the composition entry remains current; with `pinned: true` it is a no-op as well and the stored default stays. The service does not validate catalog membership: a provider route may serve an unadvertised model, and the consumer that opens a model request owns availability diagnostics.
 
 -----
 

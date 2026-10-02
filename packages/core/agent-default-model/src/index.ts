@@ -43,6 +43,11 @@ export interface Config {
   provider: string
   /** Provider-owned model id. */
   model: string
+  /**
+   * When true, `saveSelection()` leaves the stored default untouched, so a selection made for one
+   * Session stays with that Session and the deployment's settings keep the default (Vesta fork).
+   */
+  pinned?: boolean
 }
 
 /** Project stored settings onto the Agent-facing selection type. */
@@ -65,14 +70,17 @@ export class AgentDefaultModelConfig extends Service {
   static Config: z<Config> = z.object({
     provider: z.string().required(),
     model: z.string().required(),
+    pinned: z.boolean().default(false),
   })
 
   private source: () => AgentDefaultModelSettings
+  private readonly pinned: boolean
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'agentDefaultModel')
     const entry: AgentDefaultModelSettings = { provider: config.provider, model: config.model }
     this.source = () => entry
+    this.pinned = config.pinned === true
     ctx.inject(['settings'], (settingsCtx) => {
       settingsCtx.settings.installSection(ctx, AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA, entry, {
         setSource: (current) => { this.source = current },
@@ -93,11 +101,13 @@ export class AgentDefaultModelConfig extends Service {
 
   /**
    * Save the complete default model selection. A deployment without a settings
-   * provider keeps its composition entry.
+   * provider keeps its composition entry; a `pinned` deployment keeps its stored
+   * default and ignores the call.
    * @param next - resolved selection accepted by an entry point.
    * @returns fulfillment after the optional settings write settles.
    */
   async saveSelection(next: ModelSelection): Promise<void> {
+    if (this.pinned) return
     await this.ctx.get('settings')?.replace(AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, {
       provider: next.provider,
       model: next.model,

@@ -25,7 +25,7 @@ class MemorySettings extends SettingsProvider {
   }
 }
 
-async function boot(): Promise<{
+async function boot(pinned = false): Promise<{
   ctx: Context
   settingsFiber: Context['fiber']
   defaultModel: AgentDefaultModelConfig
@@ -36,11 +36,23 @@ async function boot(): Promise<{
   await ctx.plugin(AgentDefaultModelConfig, {
     provider: 'deepseek-official',
     model: 'deepseek-v4-flash',
+    ...(pinned ? { pinned } : {}),
   })
   return { ctx, settingsFiber, defaultModel: ctx.agentDefaultModel }
 }
 
 describe('AgentDefaultModelConfig', () => {
+  it('keeps the stored default when pinned', async () => {
+    const bench = await boot(true)
+    await bench.defaultModel.saveSelection({
+      provider: 'acme-gateway', model: 'acme-large', reasoningEffort: ReasoningEffortId('high'),
+    })
+    expect(bench.defaultModel.currentSelection()).toEqual({
+      provider: 'deepseek-official', model: 'deepseek-v4-flash',
+    })
+    await bench.ctx.fiber.dispose()
+  })
+
   it('resolves the user layer over the composition entry', async () => {
     const bench = await boot()
     expect(bench.defaultModel.currentSelection()).toEqual({

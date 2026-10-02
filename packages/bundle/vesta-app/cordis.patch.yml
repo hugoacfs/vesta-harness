@@ -77,6 +77,18 @@
       config:
         exportDir: ~/backups/sessions-deleted
 
+    # ── default model (2026-10-02): the home's settings.yaml rules ─
+    # Upstream saves every picker click as the new default, which is how a home drifted to
+    # `reasoningEffort: off` on 2026-09-25. `pinned` keeps the pick per Session; the deployed
+    # settings.yaml (deploy/vesta/settings.yaml, xhigh) stays the default. The entry below is only
+    # the fallback for a home without settings.yaml, so it names the lane, not DeepSeek.
+    - id: agent-default-model
+      name: '@deepseek-ai/dsh-agent-default-model'
+      config:
+        provider: vesta
+        model: default
+        pinned: true
+
     # ── roadmap T1/T6 (2026-09-11): a clock for the model, reminders in the conversation ─
     # time-context appends a durable reading (time, browser zone, elapsed) at most every
     # 5 min; schedule adds schedule_create/list/delete (delivery needs the session open).
