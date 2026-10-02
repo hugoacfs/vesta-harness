@@ -24,6 +24,35 @@
     # staging on one host keep separate sessions.
     cookieMaxAgeDays: 7
 
+# Default model (2026-10-02): the home's settings.yaml rules. Upstream saves every picker click as
+# the new default, which is how a home drifted to `reasoningEffort: off` on 2026-09-25; `pinned`
+# keeps the pick per Session and the deployed settings.yaml (xhigh) stays the default. The entry
+# is the fallback for a home without settings.yaml, so it names the lane, not DeepSeek.
+- id: agent-default-model
+  config:
+    provider: vesta
+    model: default
+    pinned: true
+
+# Telemetry (egress appraisal 2026-10-02): nothing leaves for DeepSeek. dsh-base loads
+# session-telemetry-otel in FEEDBACK_ONLY mode with its exporter on DeepSeek's collector, so a
+# thumbs rating or /feedback would upload the session history. DISABLED is the plugin's own off
+# switch (feedback stays in the session log); the units add DSH_TELEMETRY_DISABLED=1 as a second lock.
+- id: session-telemetry-otel
+  config:
+    mode: DISABLED
+
+# System prompt (P26, 2026-10-02): Vesta's prompt opens with Vesta. The dsh-base identity line
+# ("You are an AI agent powered by DeepSeek Harness.") is off; the web-app persona prefix and the
+# working-directory suffix are restated because a patch replaces the whole config. Presets carry
+# their own persona prefix (scoped), so this prefix is seen only by agents without one.
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    personaPrefix: >-
+      You are Vesta, powered by the {{model}} model, on the user's own server.
+    personaSuffix: Your working directory is {{cwd}}.
+
 - insert:
     # ── browser: Vesta look ────────────────────────────────────────────────
     - id: ui-vesta-theme
@@ -76,36 +105,6 @@
       name: '@deepseek-ai/dsh-vesta-sessions'
       config:
         exportDir: ~/backups/sessions-deleted
-
-    # ── system prompt (P26, 2026-10-02): Vesta's prompt opens with Vesta ─
-    # dsh-base prepends "You are an AI agent powered by DeepSeek Harness."; the persona
-    # prefix already names Vesta and the model, so the identity line is off.
-    - id: system-prompt
-      config:
-        includeHarnessIdentity: false
-
-    # ── telemetry (egress appraisal 2026-10-02): nothing leaves for DeepSeek ─
-    # dsh-base loads session-telemetry-otel in FEEDBACK_ONLY mode with its exporter pointed at
-    # DeepSeek's collector (https://harness-telemetry.deepseeksvc.com/v1/logs): a thumbs rating or
-    # /feedback would upload the whole session history. DISABLED is the plugin's own off switch;
-    # feedback stays in the session log and the plugin logs that nothing was uploaded.
-    # The units also set DSH_TELEMETRY_DISABLED=1 (deploy/vesta/*.service) as a second lock.
-    - id: session-telemetry-otel
-      name: '@deepseek-ai/dsh-session-telemetry-otel'
-      config:
-        mode: DISABLED
-
-    # ── default model (2026-10-02): the home's settings.yaml rules ─
-    # Upstream saves every picker click as the new default, which is how a home drifted to
-    # `reasoningEffort: off` on 2026-09-25. `pinned` keeps the pick per Session; the deployed
-    # settings.yaml (deploy/vesta/settings.yaml, xhigh) stays the default. The entry below is only
-    # the fallback for a home without settings.yaml, so it names the lane, not DeepSeek.
-    - id: agent-default-model
-      name: '@deepseek-ai/dsh-agent-default-model'
-      config:
-        provider: vesta
-        model: default
-        pinned: true
 
     # ── roadmap T1/T6 (2026-09-11): a clock for the model, reminders in the conversation ─
     # time-context appends a durable reading (time, browser zone, elapsed) at most every
