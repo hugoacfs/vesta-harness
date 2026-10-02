@@ -43,7 +43,7 @@ Everything else that can reach the network is either local by design, dormant (l
 
 - nftables `socket cgroupv2` matching on the unit's cgroup counted 0 packets while traffic flowed (not debugged; table removed).
 - systemd `IPAddressDeny=any` + `IPAddressAllow=` on the **user** unit is accepted but not enforced: the journal says "unit configures an IP firewall, but not running as root" (properties reverted).
-- Consequence: a permanent egress fence for the harness needs the units to become **system** units (`User=hugo`) where `IPAddressAllow` is enforced, or an nftables rule keyed on something other than the user cgroup. It would also stop the model's tools from reaching the internet (#11). Hugo's decision.
+- Hugo's rule (same day): MCPs and the shell tools keep the internet; the harness process itself must not reach home. Built as D26: a Node preload (`egress-gate.mjs`) hooking `net.Socket.prototype.connect` in the harness process only — allowlist loopback, LAN, tailnet, push services; `EGRESS_DENIED` before any DNS lookup; one journal line per destination per minute; the module strips itself from `NODE_OPTIONS` so children are untouched. Verified on staging with `verify/egress-gate-verify.sh` (raw socket, `http.get`, `fetch` refused; loopback reaches the stack; child ungated) and the regular exercise (LiteLLM, MCPs, the shell tool's `curl` → 200, the Mac SSH provider) with zero denials.
 
 ## Changes made (staging only, 2026-10-02)
 

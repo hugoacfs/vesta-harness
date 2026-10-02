@@ -11,6 +11,8 @@ Environment=DSH_HOME=%h/.vesta-harness-staging
 Environment=NODE_ENV=production
 # Egress appraisal 2026-10-02: no session uploads to DeepSeek's collector (second lock beside the bundle row).
 Environment=DSH_TELEMETRY_DISABLED=1
+# Egress gate (D26, 2026-10-02): the harness process may only reach loopback, LAN, tailnet and the push services; its child processes are not gated.
+Environment=NODE_OPTIONS=--import=%h/code/vesta-harness-staging/deploy/vesta/egress-gate.mjs
 Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin:%h/.local/share/pnpm
 ExecStart=/usr/bin/env node %h/code/vesta-harness-staging/apps/cli/lib/bin.js --profile vesta --host 127.0.0.1 --port 3082 --trusted-host vesta.tail22b555.ts.net --no-open
 Restart=always
