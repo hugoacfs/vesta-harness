@@ -39,11 +39,14 @@ mkdir -p ~/.vesta-harness/profiles ~/.vesta-harness/.agent-presets
 cp -r ~/code/vesta-harness/deploy/vesta/profiles/vesta ~/.vesta-harness/profiles/
 cp ~/code/vesta-harness/deploy/vesta/settings.yaml ~/.vesta-harness/settings.yaml
 cp -r ~/code/vesta-harness/deploy/vesta/agent-presets/{vesta-default,vesta-orch} ~/.vesta-harness/.agent-presets/
+cp -r ~/code/vesta-harness/deploy/vesta/skills/* ~/.vesta-harness/skills/   # SKILL.md bundles (P26: research-brief); the filesystem provider watches the directory
 cp ~/code/vesta-harness/deploy/vesta/home-cordis.patch.yml ~/.vesta-harness/cordis.patch.yml   # machine-wide MCP mounts (Telegram notifier)
 install -m 600 ~/.dsh/.credentials.yaml ~/.vesta-harness/.credentials.yaml   # VESTA_API_KEY; never in git
 ```
 
 Nothing leaves for DeepSeek: the bundle runs `session-telemetry-otel` in `DISABLED` mode and both units set `DSH_TELEMETRY_DISABLED=1` (egress appraisal 2026-10-02, `egress-appraisal-2026-10-02.md`); a thumbs rating or `/feedback` stays in the session log. Since the same evening the harness process is also gated (D26): the units load `deploy/vesta/egress-gate.mjs` through `NODE_OPTIONS=--import`, which refuses any connection from the harness process to a destination outside loopback, `192.168.0.0/16`, the tailnet and the Web Push services (`EGRESS_DENIED`, one journal line per destination per minute). Processes the harness spawns — bash, the terminal, the PTC runtime, LSP servers — are not gated and keep their internet access, and MCP servers are separate processes. `VESTA_EGRESS_ALLOW=host,.suffix,cidr` extends the list, `VESTA_EGRESS_GATE=off` disables it; `verify/egress-gate-verify.sh` checks it.
+
+Unit drop-ins: `DSH_BASE_PATH` lives in `~/.config/systemd/user/vesta-harness{,-staging}.service.d/basepath.conf` (templates beside the unit files). Never run `systemctl --user revert` on these units — it deletes that persistent drop-in along with any runtime one (2026-10-02: staging lost its base path for an afternoon and the login redirected to the site root). To drop a runtime `set-property`, remove its file under `/run/user/$UID/systemd/user.control/<unit>.d/` and `daemon-reload`.
 
 `settings.yaml` is the default model and effort every new session starts on (`agent-default-model: provider vesta, model default, reasoningEffort xhigh`). Since 2026-10-02 the bundle pins it (`pinned: true` on the `agent-default-model` row): the picker in a session changes that session only and no longer rewrites this file, so the template and the home agree; `verify/homes-drift.sh` reports when they do not.
 
