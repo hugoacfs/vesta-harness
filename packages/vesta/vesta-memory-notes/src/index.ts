@@ -45,7 +45,7 @@ import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import z from '@deepseek-ai/schemastery'
 import { McpClient } from './mcp.ts'
-import { noteBody } from './note-record.ts'
+import { noteBody, unwrapBody } from './note-record.ts'
 
 export const name = 'vesta-memory-notes'
 
@@ -83,7 +83,10 @@ export interface Config {
   recallLimit: number
   /** Characters of a note body rendered by recall. @default 600 */
   recallBodyChars: number
-  /** Search score below which a note is not recalled (the store's keyword score; unrelated notes score under 5). @default 8 */
+  /**
+   * Search score below which a note is not recalled (the store's keyword score; unrelated notes score under 5).
+   * Applies only to stores without `memory_recall` (contract below 4); those choose by their own reranker. @default 8
+   */
   recallMinScore: number
   /** Where automatic writes are logged; empty = `$DSH_HOME/memory-notes.log.jsonl`. @default '' */
   logFile: string
@@ -135,6 +138,8 @@ interface SessionState {
   running: boolean
   timer?: ReturnType<typeof setTimeout> | undefined
   recallKey?: string
+  /** The previous user message, sent to `memory_recall` as context so a short follow-up finds its subject. */
+  lastUserText?: string
   /** Note names the session wrote through the memory tools itself; capture leaves those subjects alone. */
   readonly ownWrites: Set<string>
 }
@@ -486,6 +491,7 @@ export function apply(ctx: Context, config: Config): void {
     } | undefined
     if (record.type === 'user/message' && data?.source?.kind === 'user') {
       state.userTurns += 1
+      state.lastUserText = textOf(data.content).slice(0, 1000)
       remember(state, `User: ${textOf(data.content).slice(0, 2000)}`)
       if (state.timer !== undefined) clearTimeout(state.timer)
       return
@@ -534,31 +540,62 @@ export function apply(ctx: Context, config: Config): void {
     for (const id of value.archivedSessionIds.map(String)) if (states.has(id)) finish(id, 'archive')
   }), 'vesta-memory-notes: archive')
 
+  // Whether the store chooses recall itself (`memory_recall`, contract 4 and later); asked again every ten minutes.
+  let storeRecall: { readonly at: number; readonly supported: boolean } | undefined
+  const recallByStore = async (): Promise<boolean> => {
+    if (storeRecall !== undefined && Date.now() - storeRecall.at < 600000) return storeRecall.supported
+    const result = await client.call('memory_status', {})
+    let contract = 0
+    if (!result.isError) {
+      try {
+        contract = Number((JSON.parse(result.text) as { contract?: unknown }).contract)
+      } catch {
+        // SyntaxError: a status answer that is not JSON comes from an older store, which has no memory_recall.
+      }
+    }
+    storeRecall = { at: Date.now(), supported: contract >= 4 }
+    return storeRecall.supported
+  }
+
   // Recall: the hook the router calls. The notes enter as an injected message on the step the
-  // prompt wakes (charter D19), each note once per session unless
-  // the store's `updated` stamp moved, so the request prefix stays cache-stable.
+  // prompt wakes (charter D19), so the request prefix stays cache-stable. A store with
+  // `memory_recall` chooses the notes itself (reranked, often none), given the previous user
+  // message as context and the names already shown, which it never returns again; with an older
+  // store the plugin searches and keeps notes above `recallMinScore`, and shows a note again
+  // only when its `updated` stamp moved.
   const recall = async (sessionId: string, text: string): Promise<void> => {
     const session = ctx.sessions.get(sessionId as SessionId)
     if (session === undefined) return
     const state = stateOf(session)
     if (state === undefined || !config.recall || text.trim().length < 12) return
-    const found = await search(text, config.recallLimit + 2)
-    const top = found[0]?.score
-    const hits = top === undefined
-      ? found.slice(0, config.recallLimit)
-      : found.filter(hit => hit.score !== undefined && hit.score >= Math.max(config.recallMinScore, top * 0.5)).slice(0, config.recallLimit)
+    const seen = shown.get(sessionId) ?? new Map<string, string>()
+    shown.set(sessionId, seen)
+    let hits: StoreHit[]
+    if (await recallByStore()) {
+      const result = await client.call('memory_recall', {
+        message: text.slice(0, 2000),
+        ...(state.lastUserText === undefined ? {} : { context: state.lastUserText }),
+        limit: config.recallLimit,
+        exclude: [...seen.keys()],
+      })
+      hits = result.isError ? [] : parseHits(result.text)
+    } else {
+      const found = await search(text, config.recallLimit + 2)
+      const top = found[0]?.score
+      hits = top === undefined
+        ? found.slice(0, config.recallLimit)
+        : found.filter(hit => hit.score !== undefined && hit.score >= Math.max(config.recallMinScore, top * 0.5)).slice(0, config.recallLimit)
+    }
     const key = hits.map(hit => hit.name).join('|')
     if (key === state.recallKey) return
     state.recallKey = key
-    const seen = shown.get(sessionId) ?? new Map<string, string>()
-    shown.set(sessionId, seen)
     const fresh = hits.filter(hit => seen.get(hit.name) !== (hit.updated ?? ''))
     if (fresh.length === 0) return
     const agent = ctx.agents.get(session.id)
     if (agent === undefined) return
     const lines: string[] = []
     for (const hit of fresh) {
-      const body = noteBody(await readNote(hit.name)).replace(/\s+/gu, ' ').slice(0, config.recallBodyChars)
+      const body = (hit.content === undefined ? noteBody(await readNote(hit.name)) : unwrapBody(hit.content)).replace(/\s+/gu, ' ').slice(0, config.recallBodyChars)
       lines.push(`- ${hit.name}${hit.updated === undefined ? '' : ` (updated ${hit.updated})`}: ${hit.description}${body === '' ? '' : ` — ${body}`}`)
     }
     try {
