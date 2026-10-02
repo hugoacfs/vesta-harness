@@ -116,6 +116,12 @@ export interface Config {
    * directory; empty renders nothing; read once at start (restart to refresh). @default ''
    */
   aboutFile: string
+  /**
+   * Names of global prompt sections to blank for every agent: each is shadowed from the agent's own
+   * scope with an empty section, so the assembled prompt drops it (P26, 2026-10-02: upstream's
+   * checkout-location and Web GUI developer notes). An unknown name blanks nothing. @default []
+   */
+  shadowSections: string[]
 }
 
 const DEFAULT_DEPTH: DepthConfig = { enabled: true, quick: 'medium', presets: ['vesta-ops', 'vesta-build', 'vesta-research'] }
@@ -164,6 +170,7 @@ export const Config: z<Config> = z.object({
   }).default(DEFAULT_DEPTH),
   core: z.string().default(''),
   aboutFile: z.string().default(''),
+  shadowSections: z.array(z.string()).default([]),
 })
 
 const RETRY_DELAY_MS = 400
@@ -308,6 +315,16 @@ export function apply(ctx: Context, config: Config): void {
     } catch (error) {
       ctx.logger.warn(`vesta-modes: aboutFile ${aboutPath} not read: ${String(error)}`)
     }
+  }
+
+  // Upstream sections this deployment does not want in the prompt: a scoped empty section with the same
+  // name shadows the global one at assembly, and empty sections render nothing (P26, 2026-10-02).
+  if (config.shadowSections.length > 0) {
+    ctx.effect(() => ctx.on('agent/created', ({ agent }: { agent: Agent }) => {
+      for (const name of config.shadowSections) {
+        agent.ctx.effect(() => agent.ctx.systemPrompt.section({ name, order: 0, text: '' }), `vesta-modes: shadow ${name}`)
+      }
+    }), 'vesta-modes: shadow sections')
   }
 
   // The shared working rules, right after every persona prefix (engine-fit E1): one voice in every mode.

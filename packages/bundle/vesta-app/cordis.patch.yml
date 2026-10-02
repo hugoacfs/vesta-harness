@@ -77,6 +77,13 @@
       config:
         exportDir: ~/backups/sessions-deleted
 
+    # ── system prompt (P26, 2026-10-02): Vesta's prompt opens with Vesta ─
+    # dsh-base prepends "You are an AI agent powered by DeepSeek Harness."; the persona
+    # prefix already names Vesta and the model, so the identity line is off.
+    - id: system-prompt
+      config:
+        includeHarnessIdentity: false
+
     # ── telemetry (egress appraisal 2026-10-02): nothing leaves for DeepSeek ─
     # dsh-base loads session-telemetry-otel in FEEDBACK_ONLY mode with its exporter pointed at
     # DeepSeek's collector (https://harness-telemetry.deepseeksvc.com/v1/logs): a thumbs rating or
@@ -151,6 +158,9 @@
         # The card about Hugo (2026-10-01): written from claude-data, kept on the server outside this repo,
         # rendered in every mode before the working rules. A missing file only logs a warning.
         aboutFile: ~/claude-data/vesta/core-card.md
+        # P26 (2026-10-02): upstream's two developer paragraphs (checkout location; Web GUI / HMR notes) leave
+        # every Vesta prompt: ~330 tokens per step that describe dsh development, not Hugo's work.
+        shadowSections: ['harness:source', 'app:web-surface']
         # The shared working rules (engine-fit E1): one voice in every mode, rendered after each persona.
         core: >-
           Working rules for every mode. Look before you act: read the log, the status or the file before

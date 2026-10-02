@@ -12,4 +12,8 @@ modes:
   vesta-companion: { label: Companion, permission: read-only, reasoning: 'off' }
   vesta-incognito: { label: Incognito, permission: read-only, reasoning: 'off', switchable: false }
 overridesFile: ''   # empty = $DSH_HOME/mode-overrides.json
+aboutFile: ''       # a short card rendered in every mode before the working rules; ~/ allowed
+shadowSections: []  # global prompt sections to blank for every agent, e.g. [harness:source, app:web-surface]
 ```
+
+`shadowSections` registers an empty section with the same name from each agent's own scope when the agent is created; scoped sections shadow global ones at assembly and empty sections render nothing, so the named upstream paragraphs leave the prompt without touching upstream code. A name no plugin registers blanks nothing.
