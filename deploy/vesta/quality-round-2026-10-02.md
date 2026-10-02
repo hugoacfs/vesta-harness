@@ -29,6 +29,7 @@ LiteLLM, 14 days, every client on the lane (harness, voice, recon, routines, tit
 
 - Presets in 14 days: Auto 37 sessions, Ops 1, Companion 1, Routine 1 (routine threads), 3 without a preset (verify runs). Build, Research, Orch, Batch, Mac, Incognito, Default: not used in the window.
 - Tools called: bash 1,822, edit 377, write 268, read 230, search MCP 449 (web 224, fetch 208, news 17), job_output 111, memory MCP 183 (read 67, write 62, search 39, list 15), todo 26, grep 23. Memory tool results are heavy: `memory_search` a median 23k chars, `memory_list` 18k.
+- Memory saving, as practised (45 recent sessions): 62 `memory_write` calls, a median 3,160 chars each, and most of them rewrite the same few notes — `ceres-flashnext` 10×, `ceres-vision-split-encoder` 10×, `game-studio-stack1-plan` 8×, `vllm-029-ec-upstream` 7×; 73 `memory_read` calls concentrate on the same names. Vesta uses the store as a project-state scratchpad (Ceres vision, game studio), while the store's own instruction says "NOT implementation detail, task state". Each rewrite costs the whole note as tool arguments (~800 tokens) plus the read before it. Open question for Hugo: is that wanted (a project log in memory) or should project state live in the workspace (a `NOTES.md` per project, searched with `session_search`), with memory kept for durable facts?
 - Steps per turn: median 2, p90 28, max 288. Background jobs are used (51 `background job` notices in 12 sessions).
 - Skills: none existed — no `skills/` in either home (the presets compose `skill`, `skill-filesystem` and `tool-skill`, so the machinery was there). Hugo picked **research brief** first: `deploy/vesta/skills/research-brief/SKILL.md`, installed in the staging home; a staging session saw the catalog and loaded it with the `skill` tool (verified). User form `/research-brief`.
 
@@ -38,7 +39,7 @@ LiteLLM, 14 days, every client on the lane (harness, voice, recon, routines, tit
 2. The two stale MCP sentences: fixed (above).
 3. Prompt trims: built on staging (above); production with the rest.
 4. Skills: research brief done first (Hugo's pick). Next candidates: "verify and report" (the stop-at-milestone status format), "server change" (backup, change, check, log).
-5. Memory: the recall side is the memory session's (Phase 1); the saving side (what `memory_write` captures, 62 writes in 14 days) and the 23k-char `memory_search` results are open — trim results server-side or in the plugin?
+5. Memory saving: the measured pattern above — project state rewritten into the same notes ten times over. Keep it (then the recall side should expect it) or move project state to the workspace? Also the 23k-char `memory_search` results — trim server-side (the memory session's) or cap in the prompt?
 
 ## How to re-measure
 
