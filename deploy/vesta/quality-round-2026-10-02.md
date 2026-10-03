@@ -35,7 +35,7 @@ LiteLLM, 14 days, every client on the lane (harness, voice, recon, routines, tit
 
 ## Questions for Hugo (product, not plumbing)
 
-1. Promote P25/P26 (gate, compaction retune, `web_search` deferred, prompt trims, the skill)? Hugo: "Not yet" (2026-10-02 evening); staging first for a while. The next 14-day read of the same script then shows the real effect.
+1. Promoted to production 2026-10-03 evening on Hugo's word (tag `vesta-stable-2026-10-03-p26`). The next 14-day read of `verify/measure/` against production shows the compaction effect; production memory also changed at 00:20 that day (0.4.4, 514 notes), so recall-size figures before and after are not comparable.
 2. The two stale MCP sentences: fixed (above).
 3. Prompt trims: built on staging (above); production with the rest.
 4. Skills: research brief done first (Hugo's pick). Next candidates: "verify and report" (the stop-at-milestone status format), "server change" (backup, change, check, log).
