@@ -61,11 +61,15 @@
   config:
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
-      # Retuned 2026-10-02 (P26) from production logs, same values as every preset:
-      # 0.7 of the window, checkpoints capped at 6144 tokens. Revert: 0.5 / 16384.
+      # P29 (2026-10-06): the 6144 cap broke compaction — xhigh thinking (provider
+      # default; the summarizer sends no reasoning level) reserved 5120 of the
+      # 6144, truncating checkpoints (78 % of Ops compactions failed, MAX_TOKENS).
+      # Restored the 2026-09-06 proven shape: 32768 cap, 16384 thinking →
+      # thinking ≤ 16k, checkpoint ≥ 16k. thresholdRatio 0.7 (P26) kept.
+      # Revert: maxTokens 6144 (P26) or 16384 (pre-P26).
       config:
         thresholdRatio: 0.7
-        maxTokens: 6144
+        maxTokens: 32768
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
     - id: tool-result-pruner

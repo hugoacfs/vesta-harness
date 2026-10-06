@@ -11,6 +11,8 @@ brief: |
   systemd --user units that failed, and free memory. Compare with your notes from earlier
   runs. Tell Hugo only if something is unhealthy, a failed unit is new, or / grew more than
   10 % since the last run; otherwise stay silent. Keep today's figures in your notes.
+  Also run `sh ~/code/vesta-harness/deploy/vesta/verify/checkout-clean.sh` and flag any DIRTY
+  deployment checkout (uncommitted work in ~/code/vesta-harness or ~/code/vesta-harness-staging).
 notify: agent                     # always | failure | never | agent (a final "NOTIFY: …" line decides)
 timeoutMinutes: 20
 enabled: false

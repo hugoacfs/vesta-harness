@@ -37,6 +37,9 @@ export DSH_CLIENT_VESTA_ENV="$env"
 # this is what makes the one-time welcome notice stay acknowledged (see VESTA.md fork patches).
 export DSH_CLIENT_SETTINGS_PERSISTENCE="${DSH_CLIENT_SETTINGS_PERSISTENCE:-host}"
 export PATH="$HOME/.local/bin:$HOME/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin:$PATH"
+# Deployment hygiene (P29, 2026-10-06): a dirty deployment checkout is a defect, not a
+# state — uncommitted work in the tree that deploys. Refuse to build one.
+sh "$(dirname "$0")/../verify/checkout-clean.sh" || exit 3
 if [ "$install" = 1 ]; then pnpm install --frozen-lockfile; fi
 pnpm run build
 echo "vesta-build: built $(git rev-parse --short HEAD 2>/dev/null || echo '?') for $env with DSH_CLIENT_TITLE=\"$DSH_CLIENT_TITLE\" DSH_CLIENT_VESTA_ENV=$DSH_CLIENT_VESTA_ENV DSH_CLIENT_SETTINGS_PERSISTENCE=$DSH_CLIENT_SETTINGS_PERSISTENCE"

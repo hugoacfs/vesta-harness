@@ -131,16 +131,17 @@
   config:
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
-      # Context discipline, retuned 2026-10-02 from 14 days of production logs
-      # (P26): at 0.5 of the 114k window with 16k-token summaries, compaction
-      # fired every ~3 steps (329 times in 40 sessions), each summary a median
-      # 9.1k tokens — 45% of every completion token the lane produced. 0.7 keeps
-      # 34k of headroom for a full 32k reply; 6144 caps the checkpoint at about
-      # a third of what the model wrote when allowed 16k. retainRatio stays at
-      # its 0.16 default. Revert: thresholdRatio 0.5, maxTokens 16384.
+      # P29 (2026-10-06): P26's 6144 cap broke compaction — the summarizer sends
+      # no reasoning level, so the provider default (xhigh) reserved
+      # min(16384, 6144-1024) = 5120 of the cap for thinking, leaving under 1k
+      # for the checkpoint: finish_reason length → MAX_TOKENS (78 % of Ops xhigh
+      # compactions failed; 312 truncations in 25 days). Restored the 2026-09-06
+      # proven shape: cap 32768, thinking min(16384, 32768-1024) = 16384 →
+      # thinking ≤ 16k, checkpoint ≥ 16k. thresholdRatio 0.7 (P26) kept.
+      # Revert: maxTokens 6144 (P26) or 16384 (pre-P26).
       config:
         thresholdRatio: 0.7
-        maxTokens: 6144
+        maxTokens: 32768
 
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
